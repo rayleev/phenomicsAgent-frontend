@@ -89,6 +89,33 @@
             <template v-if="msg.role === 'assistant'">
               <div class="avatar bot">稻</div>
               <div class="col">
+                <!-- Tool calls cards -->
+                <div v-if="msg.tool_calls && msg.tool_calls.length > 0" class="tool-calls-area">
+                  <details v-for="(tc, tci) in msg.tool_calls" :key="tci" class="tool-call-card" :class="tc.status">
+                    <summary class="tool-call-summary">
+                      <span class="tool-call-icon">{{ tc.status === 'error' ? '❌' : '🔧' }}</span>
+                      <span class="tool-call-name">调用了 {{ tc.tool_name }}</span>
+                      <span class="tool-call-status" v-if="tc.status === 'started'">⏳ 进行中</span>
+                      <span class="tool-call-status" v-else-if="tc.status === 'completed'">✅ 完成</span>
+                      <span class="tool-call-status" v-else>❌ 失败</span>
+                    </summary>
+                    <div class="tool-call-detail">
+                      <div class="tool-call-section">
+                        <strong>参数：</strong>
+                        <pre>{{ JSON.stringify(tc.input, null, 2) }}</pre>
+                      </div>
+                      <div v-if="tc.status === 'completed' && tc.result" class="tool-call-section">
+                        <strong>结果：</strong>
+                        <pre>{{ typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result, null, 2) }}</pre>
+                      </div>
+                      <div v-if="tc.status === 'error' && tc.error" class="tool-call-section tool-call-error">
+                        <strong>错误：</strong>
+                        <pre>{{ tc.error }}</pre>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+
                 <details class="thinking-wrap" v-if="msg.thinking_content" :open="false">
                   <summary class="thinking-summary">深度思考</summary>
                   <div class="thinking-content">{{ msg.thinking_content }}</div>
@@ -111,6 +138,33 @@
           <div class="msg bot" v-if="isStreaming">
             <div class="avatar bot">稻</div>
             <div class="col">
+              <!-- In-stream tool call cards -->
+              <div v-if="streamToolCalls.length > 0" class="tool-calls-area">
+                <details v-for="(tc, tci) in streamToolCalls" :key="'s-' + tci" class="tool-call-card" :class="tc.status" :open="true">
+                  <summary class="tool-call-summary">
+                    <span class="tool-call-icon">{{ tc.status === 'error' ? '❌' : tc.status === 'completed' ? '✅' : '🔧' }}</span>
+                    <span class="tool-call-name">调用了 {{ tc.tool_name }}</span>
+                    <span class="tool-call-status" v-if="tc.status === 'started'">⏳ 运行中...</span>
+                    <span class="tool-call-status" v-else-if="tc.status === 'completed'">✅ 完成</span>
+                    <span class="tool-call-status" v-else>❌ 失败</span>
+                  </summary>
+                  <div class="tool-call-detail">
+                    <div class="tool-call-section">
+                      <strong>参数：</strong>
+                      <pre>{{ JSON.stringify(tc.input, null, 2) }}</pre>
+                    </div>
+                    <div v-if="tc.status === 'completed' && tc.result" class="tool-call-section">
+                      <strong>结果：</strong>
+                      <pre>{{ typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result, null, 2) }}</pre>
+                    </div>
+                    <div v-if="tc.status === 'error' && tc.error" class="tool-call-section tool-call-error">
+                      <strong>错误：</strong>
+                      <pre>{{ tc.error }}</pre>
+                    </div>
+                  </div>
+                </details>
+              </div>
+
               <details class="thinking-wrap" v-if="streamThinking" :open="false">
                 <summary class="thinking-summary">深度思考</summary>
                 <div class="thinking-content">{{ streamThinking }}</div>
@@ -146,6 +200,48 @@
               <span class="tool-icon">🧠</span>
               <span class="tool-label">深度思考</span>
             </button>
+            <div class="services-dropdown">
+              <button
+                class="composer-tool-btn"
+                :class="{ active: enabledServiceNames.length > 0 }"
+                @click="servicesDropdownOpen = !servicesDropdownOpen"
+                title="选择模型可调用的服务"
+              >
+                <span class="tool-icon">🔧</span>
+                <span class="tool-label">
+                  服务
+                  <span class="services-badge" v-if="enabledServiceNames.length > 0">{{ enabledServiceNames.length }}</span>
+                </span>
+              </button>
+              <div class="services-dropdown-panel" v-if="servicesDropdownOpen" @click.stop>
+                <div class="services-dropdown-header">已注册服务</div>
+                <label
+                  v-for="svc in serviceList"
+                  :key="svc.name"
+                  class="services-dropdown-item"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="enabledServiceNames.includes(svc.name)"
+                    @change="toggleService(svc.name)"
+                  />
+                  <span class="services-dropdown-name">{{ svc.name }}</span>
+                  <span class="services-dropdown-desc">{{ svc.description }}</span>
+                </label>
+                <div class="services-dropdown-empty" v-if="serviceList.length === 0">
+                  暂无可用服务
+                </div>
+
+                <!-- Separator + Add custom service -->
+                <div class="services-dropdown-divider"></div>
+                <div>
+                  <button class="services-dropdown-add-btn" @click="openAddService">
+                    <span class="services-dropdown-add-icon">+</span>
+                    <span>添加自定义服务</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Input row -->
@@ -246,6 +342,60 @@
         </div>
       </div>
     </div>
+
+    <!-- Add Service Modal -->
+    <div class="config-overlay" v-if="showAddServiceModal" @click.self="cancelAddService">
+      <div class="config-panel">
+        <h2>添加自定义服务</h2>
+
+        <div class="config-group">
+          <label>名称 *</label>
+          <input v-model="newService.name" placeholder="my_service" />
+        </div>
+        <div class="config-group">
+          <label>描述</label>
+          <input v-model="newService.description" placeholder="描述此服务的功能，模型据此决定何时调用" />
+        </div>
+        <div class="config-group">
+          <label>URL *</label>
+          <input v-model="newService.url" placeholder="https://api.example.com/endpoint" />
+        </div>
+        <div class="config-group">
+          <label>方法</label>
+          <select v-model="newService.method">
+            <option value="POST">POST</option>
+            <option value="GET">GET</option>
+            <option value="PUT">PUT</option>
+            <option value="DELETE">DELETE</option>
+          </select>
+        </div>
+        <div class="config-group">
+          <label>请求体模板 (JSON)</label>
+          <textarea
+            v-model="newService.requestTemplate"
+            :placeholder="`{\\\&quot;city\\\&quot;: \\\&quot;{city}\\\&quot;, \\\&quot;days\\\&quot;: 3}  {param} 为参数占位，将由模型填写`"
+            rows="4"
+          ></textarea>
+        </div>
+        <div class="config-group">
+          <label>请求头 (JSON, 可选)</label>
+          <input v-model="newService.headers" placeholder='{"Content-Type": "application/json"}' />
+        </div>
+        <div class="config-group">
+          <label>超时 (秒)</label>
+          <input v-model.number="newService.timeout" type="number" placeholder="30" />
+        </div>
+
+        <div class="services-add-error" v-if="addServiceError">{{ addServiceError }}</div>
+
+        <div class="config-actions">
+          <button class="btn-ghost" @click="cancelAddService">取消</button>
+          <button class="btn-primary" @click="submitAddService" :disabled="addingService">
+            {{ addingService ? '注册中...' : '注册服务' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -263,6 +413,7 @@ const {
   isStreaming,
   streamContent,
   streamThinking,
+  streamToolCalls,
   loadConversations,
   loadMessages,
   deleteConversation,
@@ -286,6 +437,21 @@ const inputEl = ref<HTMLTextAreaElement | null>(null)
 const chatEl = ref<HTMLElement | null>(null)
 const apiConnected = ref(false)
 const thinkingEnabled = ref(false)
+const servicesDropdownOpen = ref(false)
+const serviceList = ref<{ name: string; description: string; url?: string; method?: string }[]>([])
+const enabledServiceNames = ref<string[]>([])
+const showAddServiceModal = ref(false)
+const addingService = ref(false)
+const addServiceError = ref('')
+const newService = ref({
+  name: '',
+  description: '',
+  url: '',
+  method: 'POST',
+  requestTemplate: '',
+  headers: '',
+  timeout: 30,
+})
 const activeProviderId = ref('')
 
 // ── User config state ──
@@ -363,7 +529,7 @@ async function onSend() {
   if (!text || isStreaming.value) return
   inputText.value = ''
   if (inputEl.value) inputEl.value.style.height = 'auto'
-  await sendMessage(text, thinkingEnabled.value)
+  await sendMessage(text, thinkingEnabled.value, enabledServiceNames.value)
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -515,6 +681,101 @@ async function removeProvider(name: string) {
   } catch {}
 }
 
+// ── Services ──
+function toggleService(name: string) {
+  const idx = enabledServiceNames.value.indexOf(name)
+  if (idx !== -1) {
+    enabledServiceNames.value.splice(idx, 1)
+  } else {
+    enabledServiceNames.value.push(name)
+  }
+}
+
+function cancelAddService() {
+  showAddServiceModal.value = false
+  addServiceError.value = ''
+  newService.value = { name: '', description: '', url: '', method: 'POST', requestTemplate: '', headers: '', timeout: 30 }
+}
+
+function openAddService() {
+  servicesDropdownOpen.value = false
+  showAddServiceModal.value = true
+}
+
+async function submitAddService() {
+  const svc = newService.value
+  if (!svc.name.trim()) { addServiceError.value = '请输入服务名称'; return }
+  if (!svc.url.trim()) { addServiceError.value = '请输入 URL'; return }
+
+  addingService.value = true
+  addServiceError.value = ''
+
+  let requestTemplate = {}
+  let headers = {}
+
+  if (svc.requestTemplate.trim()) {
+    try {
+      requestTemplate = JSON.parse(svc.requestTemplate.trim())
+    } catch {
+      addServiceError.value = '请求体模板不是有效的 JSON'
+      addingService.value = false
+      return
+    }
+  }
+  if (svc.headers.trim()) {
+    try {
+      headers = JSON.parse(svc.headers.trim())
+    } catch {
+      addServiceError.value = '请求头不是有效的 JSON'
+      addingService.value = false
+      return
+    }
+  }
+
+  try {
+    const r = await fetch('/api/services', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: svc.name.trim(),
+        description: svc.description.trim(),
+        url: svc.url.trim(),
+        method: svc.method,
+        headers,
+        request_template: requestTemplate,
+        timeout: svc.timeout || 30,
+      }),
+    })
+    if (!r.ok) {
+      const err = await r.json()
+      addServiceError.value = err.detail || '注册失败'
+      return
+    }
+    // Success
+    cancelAddService()
+    await loadServices()
+  } catch (e: any) {
+    addServiceError.value = '网络错误: ' + e.message
+  } finally {
+    addingService.value = false
+  }
+}
+
+async function loadServices() {
+  try {
+    const r = await fetch(`/api/services`, { headers: authHeaders() })
+    if (r.ok) serviceList.value = await r.json()
+  } catch {}
+}
+
+// Close services dropdown on outside click
+function onServicesDocClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (servicesDropdownOpen.value && !target.closest('.services-dropdown')) {
+    servicesDropdownOpen.value = false
+  }
+}
+
 // ── Health ──
 async function checkHealth() {
   try {
@@ -538,8 +799,10 @@ onMounted(async () => {
   }
   await loadConversations()
   await loadUserProviders()
+  await loadServices()
   await checkHealth()
   setInterval(checkHealth, 15000)
+  document.addEventListener('click', onServicesDocClick)
   setTimeout(() => inputEl.value?.focus(), 200)
 })
 </script>

@@ -9,6 +9,14 @@ function authHeaders(): Record<string, string> {
   return { 'Authorization': `Bearer ${token}` }
 }
 
+export interface ToolCallInfo {
+  tool_name: string
+  input: Record<string, any>
+  status: 'started' | 'completed' | 'error'
+  result?: any
+  error?: string
+}
+
 export interface Conversation {
   id: string
   title: string
@@ -18,9 +26,10 @@ export interface Conversation {
 
 export interface Message {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool'
   content: string
   thinking_content: string | null
+  tool_calls?: ToolCallInfo[] | null
   created_at: string
 }
 
@@ -31,6 +40,7 @@ export function useChat() {
   const isStreaming = ref(false)
   const streamContent = ref('')
   const streamThinking = ref('')
+  const streamToolCalls = ref<ToolCallInfo[]>([])
 
   async function loadConversations() {
     try {
@@ -45,10 +55,22 @@ export function useChat() {
   async function loadMessages(convId: string) {
     try {
       const r = await fetch(`${API_BASE}/api/conversations/${convId}/messages`, { headers: authHeaders() })
-      if (!r.ok) throw new Error('Failed to load messages')
-      messages.value = await r.json()
+      if (!r.ok) {
+        messages.value = []
+        throw new Error(`HTTP ${r.status}: ${r.statusText}`)
+      }
+      const data = await r.json()
+      // Parse tool_calls from JSON string if needed
+      for (const msg of data) {
+        if (msg.tool_calls && typeof msg.tool_calls === 'string') {
+          try { msg.tool_calls = JSON.parse(msg.tool_calls) } catch { msg.tool_calls = null }
+        }
+      }
+      messages.value = data
     } catch (e) {
       console.error('loadMessages error:', e)
+      // Clear messages on error so we don't show stale content
+      messages.value = []
     }
   }
 
@@ -66,7 +88,7 @@ export function useChat() {
     }
   }
 
-  async function sendMessage(content: string, thinkingEnabled: boolean = false) {
+  async function sendMessage(content: string, thinkingEnabled: boolean = false, enabledServices: string[] = []) {
     if (isStreaming.value) return
 
     // Optimistically add user message
@@ -82,6 +104,7 @@ export function useChat() {
     isStreaming.value = true
     streamContent.value = ''
     streamThinking.value = ''
+    streamToolCalls.value = []
 
     try {
       const r = await fetch(`${API_BASE}/api/chat`, {
@@ -91,6 +114,7 @@ export function useChat() {
           content,
           conversation_id: currentConvId.value,
           thinking_enabled: thinkingEnabled,
+          enabled_services: enabledServices,
         }),
       })
       if (!r.ok) throw new Error(await r.text())
@@ -120,19 +144,40 @@ export function useChat() {
         } catch {}
       })
 
+      es.addEventListener('tool_call', (e: MessageEvent) => {
+        try {
+          const d = JSON.parse(e.data)
+          const existingIdx = streamToolCalls.value.findIndex(t => t.tool_name === d.tool_name)
+          if (existingIdx !== -1) {
+            // Update existing tool call
+            streamToolCalls.value[existingIdx] = { ...streamToolCalls.value[existingIdx], ...d }
+          } else {
+            streamToolCalls.value.push({
+              tool_name: d.tool_name,
+              input: d.input || {},
+              status: d.status || 'started',
+              result: d.result,
+              error: d.error,
+            })
+          }
+        } catch {}
+      })
+
       es.addEventListener('done', () => {
         es.close()
         isStreaming.value = false
-        // Add the assistant message — we already have full content from SSE
+        // Add the assistant message with tool_calls if any
         messages.value.push({
           id: 'msg-' + Math.random().toString(36).slice(2),
           role: 'assistant',
           content: streamContent.value,
           thinking_content: streamThinking.value || null,
+          tool_calls: streamToolCalls.value.length > 0 ? [...streamToolCalls.value] : null,
           created_at: new Date().toISOString(),
         })
         streamContent.value = ''
         streamThinking.value = ''
+        streamToolCalls.value = []
         // Only update the conversations list (timestamp)
         loadConversations()
       })
@@ -147,10 +192,12 @@ export function useChat() {
             role: 'assistant',
             content: streamContent.value + '\n\n*(连接中断，回答不完整)*',
             thinking_content: streamThinking.value || null,
+            tool_calls: streamToolCalls.value.length > 0 ? [...streamToolCalls.value] : null,
             created_at: new Date().toISOString(),
           })
           streamContent.value = ''
           streamThinking.value = ''
+          streamToolCalls.value = []
         }
       })
     } catch (e: any) {
@@ -171,6 +218,7 @@ export function useChat() {
     messages.value = []
     streamContent.value = ''
     streamThinking.value = ''
+    streamToolCalls.value = []
   }
 
   function renderMarkdown(text: string): string {
@@ -184,6 +232,7 @@ export function useChat() {
     isStreaming,
     streamContent,
     streamThinking,
+    streamToolCalls,
     loadConversations,
     loadMessages,
     deleteConversation,
