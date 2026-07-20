@@ -8,6 +8,7 @@ const routes = [
   { path: '/login', name: 'Login', component: LoginView },
   { path: '/register', name: 'Register', component: RegisterView },
   { path: '/chat', name: 'Chat', component: ChatView, meta: { requiresAuth: true } },
+  { path: '/imaging', name: 'Imaging', component: () => import('./views/ImagingView.vue'), meta: { requiresAuth: true } },
   { path: '/:pathMatch(.*)*', redirect: '/chat' },
 ]
 

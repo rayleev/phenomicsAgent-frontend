@@ -39,6 +39,10 @@
           <span class="nav-icon">{{ sidebarCollapsed ? '▶' : '◀' }}</span>
           <span class="nav-label">{{ sidebarCollapsed ? '展开' : '收起侧栏' }}</span>
         </div>
+        <router-link to="/imaging" class="nav-item" style="text-decoration:none;color:inherit">
+          <span class="nav-icon">🛰</span>
+          <span class="nav-label">无人机影像</span>
+        </router-link>
         <div class="nav-item" @click="openConfig">
           <span class="nav-icon">⚙</span>
           <span class="nav-label">设置</span>
