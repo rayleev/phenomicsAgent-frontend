@@ -33,14 +33,22 @@ export interface Message {
   created_at: string
 }
 
+// ── Module-level singleton state ──
+// All components share the same chat state. This fixes the bug where
+// AppSidebar and ChatView each had their own independent copy, so actions
+// in one (newConversation / selectConversation) were not reflected in the other.
+const conversations = ref<Conversation[]>([])
+const currentConvId = ref<string | null>(null)
+const messages = ref<Message[]>([])
+const isStreaming = ref(false)
+const streamContent = ref('')
+const streamThinking = ref('')
+const streamToolCalls = ref<ToolCallInfo[]>([])
+
+// Shared EventSource handle so streaming can be aborted across components.
+let activeEventSource: EventSource | null = null
+
 export function useChat() {
-  const conversations = ref<Conversation[]>([])
-  const currentConvId = ref<string | null>(null)
-  const messages = ref<Message[]>([])
-  const isStreaming = ref(false)
-  const streamContent = ref('')
-  const streamThinking = ref('')
-  const streamToolCalls = ref<ToolCallInfo[]>([])
 
   async function loadConversations() {
     try {
@@ -127,8 +135,10 @@ export function useChat() {
         await loadConversations()
       }
 
-      // Create SSE connection
+      // Create SSE connection (shared so it can be aborted)
+      closeActiveEventSource()
       const es = new EventSource(`${API_BASE}/api/chat/stream/${sessionId}`)
+      activeEventSource = es
 
       es.addEventListener('content', (e: MessageEvent) => {
         try {
@@ -164,7 +174,7 @@ export function useChat() {
       })
 
       es.addEventListener('done', () => {
-        es.close()
+        closeActiveEventSource()
         isStreaming.value = false
         // Add the assistant message with tool_calls if any
         messages.value.push({
@@ -183,7 +193,7 @@ export function useChat() {
       })
 
       es.addEventListener('error', () => {
-        es.close()
+        closeActiveEventSource()
         isStreaming.value = false
         // Preserve whatever content we got before the error
         if (streamContent.value) {
@@ -197,12 +207,39 @@ export function useChat() {
           })
           streamContent.value = ''
           streamThinking.value = ''
+          streamToolCalls.value = ''
           streamToolCalls.value = []
         }
       })
     } catch (e: any) {
       isStreaming.value = false
       console.error('sendMessage error:', e)
+    }
+  }
+
+  /** Close the active SSE connection (called by the Stop button). */
+  function abortStream() {
+    closeActiveEventSource()
+    isStreaming.value = false
+    if (streamContent.value) {
+      messages.value.push({
+        id: 'msg-' + Math.random().toString(36).slice(2),
+        role: 'assistant',
+        content: streamContent.value + '\n\n*(已停止)*',
+        thinking_content: streamThinking.value || null,
+        tool_calls: streamToolCalls.value.length > 0 ? [...streamToolCalls.value] : null,
+        created_at: new Date().toISOString(),
+      })
+    }
+    streamContent.value = ''
+    streamThinking.value = ''
+    streamToolCalls.value = []
+  }
+
+  function closeActiveEventSource() {
+    if (activeEventSource) {
+      activeEventSource.close()
+      activeEventSource = null
     }
   }
 
@@ -214,6 +251,7 @@ export function useChat() {
 
   function newConversation() {
     if (isStreaming.value) return
+    closeActiveEventSource()
     currentConvId.value = null
     messages.value = []
     streamContent.value = ''
@@ -239,6 +277,7 @@ export function useChat() {
     sendMessage,
     selectConversation,
     newConversation,
+    abortStream,
     renderMarkdown,
   }
 }

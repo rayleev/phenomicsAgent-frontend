@@ -1,154 +1,40 @@
 <template>
-  <div class="app-layout" style="display:flex;height:100%">
-    <!-- Mobile mask -->
-    <div class="sidebar-mask" :class="{ show: mobileSidebarOpen }" @click="mobileSidebarOpen = false"></div>
-
-    <!-- Sidebar -->
-    <aside class="sidebar" :class="{ collapsed: sidebarCollapsed, open: mobileSidebarOpen }">
-      <div class="sidebar-brand">
-        <div class="brand-icon">稻</div>
-        <span class="brand-label">phenomicsAgent</span>
+  <div class="chat-view">
+    <!-- Topbar -->
+    <header class="topbar">
+      <button class="sidebar-toggle" @click="openMobileSidebar" aria-label="打开侧栏">☰</button>
+      <span class="topbar-title">{{ currentConvTitle }}</span>
+      <div class="top-actions">
+        <span class="pill" :class="{ ok: apiConnected }">{{ apiConnected ? 'API 已连接' : 'API 未连接' }}</span>
       </div>
+    </header>
 
-      <!-- User info -->
-      <div class="sidebar-user">
-        <div class="sidebar-user-avatar">{{ userInitial }}</div>
-        <div class="sidebar-user-info">
-          <div class="sidebar-user-name">{{ user?.username }}</div>
-          <div class="sidebar-user-role">{{ user?.role === 'admin' ? '管理员' : '用户' }}</div>
-        </div>
-      </div>
-
-      <!-- Conversation list -->
-      <div class="conv-list">
-        <div v-if="conversations.length === 0" class="conv-empty">暂无会话</div>
-        <div
-          v-for="conv in conversations"
-          :key="conv.id"
-          class="conv-item"
-          :class="{ active: conv.id === currentConvId }"
-          @click="selectConv(conv.id)"
-          @dblclick="startRename(conv)"
-        >
-          <span class="conv-item-title">{{ conv.title }}</span>
-        </div>
-      </div>
-
-      <div class="sidebar-footer">
-        <div class="nav-item" @click="sidebarCollapsed = !sidebarCollapsed" v-if="!mobileSidebarOpen">
-          <span class="nav-icon">{{ sidebarCollapsed ? '▶' : '◀' }}</span>
-          <span class="nav-label">{{ sidebarCollapsed ? '展开' : '收起侧栏' }}</span>
-        </div>
-        <router-link to="/imaging" class="nav-item" style="text-decoration:none;color:inherit">
-          <span class="nav-icon">🛰</span>
-          <span class="nav-label">无人机影像</span>
-        </router-link>
-        <div class="nav-item" @click="openConfig">
-          <span class="nav-icon">⚙</span>
-          <span class="nav-label">设置</span>
-        </div>
-        <div class="nav-item" @click="logout">
-          <span class="nav-icon">🚪</span>
-          <span class="nav-label">退出登录</span>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Main -->
-    <div class="main">
-      <header class="topbar">
-        <button class="sidebar-toggle show" @click="toggleMobileSidebar" aria-label="打开侧栏">☰</button>
-        <span class="topbar-title">{{ currentConvTitle }}</span>
-        <div class="top-actions">
-          <span class="pill" :class="{ ok: apiConnected }">{{ apiConnected ? 'API 已连接' : 'API 未连接' }}</span>
-          <button class="btn-ghost" @click="newConversation">新建</button>
-          <button class="btn-ghost" @click="clearConversation" :disabled="!currentConvId">清空</button>
-        </div>
-      </header>
-
-      <!-- Chat area -->
-      <div class="chat" ref="chatEl">
-        <div class="chat-inner">
-          <!-- Welcome screen -->
-          <div class="welcome" v-if="messages.length === 0 && !streamContent && !streamThinking">
-            <div class="welcome-icon">稻</div>
-            <h2>你好，{{ user?.username || '用户' }}</h2>
-            <p>提交你的问题，AI 将为你解答。</p>
-            <div class="examples">
-              <span @click="exampleClick('什么是基因编辑育种技术？')">基因编辑育种</span>
-              <span @click="exampleClick('水稻的耐盐性研究进展')">耐盐性研究</span>
-              <span @click="exampleClick('作物表型数据有哪些类型？')">作物表型数据</span>
-            </div>
+    <!-- Chat area -->
+    <div class="chat" ref="chatEl">
+      <div class="chat-inner">
+        <!-- Welcome screen -->
+        <div class="welcome" v-if="messages.length === 0 && !streamContent && !streamThinking">
+          <div class="welcome-icon">农</div>
+          <h2>你好</h2>
+          <p>提交你的问题，AI 将为你解答。</p>
+          <div class="examples">
+            <span @click="exampleClick('什么是基因编辑育种技术？')">基因编辑育种</span>
+            <span @click="exampleClick('水稻的耐盐性研究进展')">耐盐性研究</span>
+            <span @click="exampleClick('作物表型数据有哪些类型？')">作物表型数据</span>
           </div>
+        </div>
 
-          <!-- Rename input -->
-          <div class="rename-bar" v-if="renamingConv">
-            <input v-model="renameTitle" @keydown.enter="doRename" @keydown.escape="cancelRename" ref="renameInput" />
-            <button class="btn-ghost" @click="doRename">确定</button>
-            <button class="btn-ghost" @click="cancelRename">取消</button>
-          </div>
-
-          <!-- Messages -->
-          <div v-for="msg in messages" :key="msg.id" class="msg" :class="msg.role">
-            <template v-if="msg.role === 'assistant'">
-              <div class="avatar bot">稻</div>
-              <div class="col">
-                <!-- Tool calls cards -->
-                <div v-if="msg.tool_calls && msg.tool_calls.length > 0" class="tool-calls-area">
-                  <details v-for="(tc, tci) in msg.tool_calls" :key="tci" class="tool-call-card" :class="tc.status">
-                    <summary class="tool-call-summary">
-                      <span class="tool-call-icon">{{ tc.status === 'error' ? '❌' : '🔧' }}</span>
-                      <span class="tool-call-name">调用了 {{ tc.tool_name }}</span>
-                      <span class="tool-call-status" v-if="tc.status === 'started'">⏳ 进行中</span>
-                      <span class="tool-call-status" v-else-if="tc.status === 'completed'">✅ 完成</span>
-                      <span class="tool-call-status" v-else>❌ 失败</span>
-                    </summary>
-                    <div class="tool-call-detail">
-                      <div class="tool-call-section">
-                        <strong>参数：</strong>
-                        <pre>{{ JSON.stringify(tc.input, null, 2) }}</pre>
-                      </div>
-                      <div v-if="tc.status === 'completed' && tc.result" class="tool-call-section">
-                        <strong>结果：</strong>
-                        <pre>{{ typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result, null, 2) }}</pre>
-                      </div>
-                      <div v-if="tc.status === 'error' && tc.error" class="tool-call-section tool-call-error">
-                        <strong>错误：</strong>
-                        <pre>{{ tc.error }}</pre>
-                      </div>
-                    </div>
-                  </details>
-                </div>
-
-                <details class="thinking-wrap" v-if="msg.thinking_content" :open="false">
-                  <summary class="thinking-summary">深度思考</summary>
-                  <div class="thinking-content">{{ msg.thinking_content }}</div>
-                </details>
-                <div class="bubble">
-                  <div class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
-                </div>
-              </div>
-            </template>
-            <template v-else>
-              <div class="col">
-                <div class="bubble">{{ msg.content }}</div>
-                <div class="meta">{{ formatTime(msg.created_at) }}</div>
-              </div>
-              <div class="avatar user">问</div>
-            </template>
-          </div>
-
-          <!-- Streaming message -->
-          <div class="msg bot" v-if="isStreaming">
-            <div class="avatar bot">稻</div>
+        <!-- Messages -->
+        <div v-for="msg in messages" :key="msg.id" class="msg" :class="msg.role">
+          <template v-if="msg.role === 'assistant'">
+            <div class="avatar bot">农</div>
             <div class="col">
-              <!-- In-stream tool call cards -->
-              <div v-if="streamToolCalls.length > 0" class="tool-calls-area">
-                <details v-for="(tc, tci) in streamToolCalls" :key="'s-' + tci" class="tool-call-card" :class="tc.status" :open="true">
+              <div v-if="msg.tool_calls && msg.tool_calls.length > 0" class="tool-calls-area">
+                <details v-for="(tc, tci) in msg.tool_calls" :key="tci" class="tool-call-card" :class="tc.status">
                   <summary class="tool-call-summary">
-                    <span class="tool-call-icon">{{ tc.status === 'error' ? '❌' : tc.status === 'completed' ? '✅' : '🔧' }}</span>
+                    <span class="tool-call-icon">{{ tc.status === 'error' ? '❌' : '🔧' }}</span>
                     <span class="tool-call-name">调用了 {{ tc.tool_name }}</span>
-                    <span class="tool-call-status" v-if="tc.status === 'started'">⏳ 运行中...</span>
+                    <span class="tool-call-status" v-if="tc.status === 'started'">⏳ 进行中</span>
                     <span class="tool-call-status" v-else-if="tc.status === 'completed'">✅ 完成</span>
                     <span class="tool-call-status" v-else>❌ 失败</span>
                   </summary>
@@ -168,238 +54,70 @@
                   </div>
                 </details>
               </div>
-
-              <details class="thinking-wrap" v-if="streamThinking" :open="false">
+              <details class="thinking-wrap" v-if="msg.thinking_content" :open="false">
                 <summary class="thinking-summary">深度思考</summary>
-                <div class="thinking-content">{{ streamThinking }}</div>
+                <div class="thinking-content">{{ msg.thinking_content }}</div>
               </details>
               <div class="bubble">
-                <div class="markdown-body" v-if="streamContent" v-html="renderMarkdown(streamContent)"></div>
-                <span class="typing" v-else>
-                  <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-                </span>
+                <div class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
               </div>
             </div>
-          </div>
+          </template>
+          <template v-else>
+            <div class="col">
+              <div class="bubble">{{ msg.content }}</div>
+              <div class="meta">{{ formatTime(msg.created_at) }}</div>
+            </div>
+            <div class="avatar user">问</div>
+          </template>
         </div>
-      </div>
 
-      <!-- Composer (DeepSeek style: model selector + thinking toggle integrated) -->
-      <div class="composer-wrap">
-        <div class="composer-inner">
-          <!-- Model & tools row (above input) -->
-          <div class="composer-tools">
-            <select class="composer-model-select" v-model="activeProviderId" @change="onProviderChange">
-              <option value="" disabled>选择模型</option>
-              <option v-for="p in userProviders" :key="p.id" :value="p.id">
-                {{ p.provider_name }} · {{ p.model }}
-              </option>
-            </select>
-            <button
-              class="composer-tool-btn"
-              :class="{ active: thinkingEnabled }"
-              @click="thinkingEnabled = !thinkingEnabled"
-              title="深度思考"
-            >
-              <span class="tool-icon">🧠</span>
-              <span class="tool-label">深度思考</span>
-            </button>
-            <div class="services-dropdown">
-              <button
-                class="composer-tool-btn"
-                :class="{ active: enabledServiceNames.length > 0 }"
-                @click="servicesDropdownOpen = !servicesDropdownOpen"
-                title="选择模型可调用的服务"
-              >
-                <span class="tool-icon">🔧</span>
-                <span class="tool-label">
-                  服务
-                  <span class="services-badge" v-if="enabledServiceNames.length > 0">{{ enabledServiceNames.length }}</span>
-                </span>
-              </button>
-              <div class="services-dropdown-panel" v-if="servicesDropdownOpen" @click.stop>
-                <div class="services-dropdown-header">已注册服务</div>
-                <label
-                  v-for="svc in serviceList"
-                  :key="svc.name"
-                  class="services-dropdown-item"
-                >
-                  <input
-                    type="checkbox"
-                    :checked="enabledServiceNames.includes(svc.name)"
-                    @change="toggleService(svc.name)"
-                  />
-                  <span class="services-dropdown-name">{{ svc.name }}</span>
-                  <span class="services-dropdown-desc">{{ svc.description }}</span>
-                </label>
-                <div class="services-dropdown-empty" v-if="serviceList.length === 0">
-                  暂无可用服务
+        <!-- Streaming message -->
+        <div class="msg bot" v-if="isStreaming">
+          <div class="avatar bot">农</div>
+          <div class="col">
+            <div v-if="streamToolCalls.length > 0" class="tool-calls-area">
+              <details v-for="(tc, tci) in streamToolCalls" :key="'s-' + tci" class="tool-call-card" :class="tc.status" :open="true">
+                <summary class="tool-call-summary">
+                  <span class="tool-call-icon">{{ tc.status === 'error' ? '❌' : tc.status === 'completed' ? '✅' : '🔧' }}</span>
+                  <span class="tool-call-name">调用了 {{ tc.tool_name }}</span>
+                  <span class="tool-call-status" v-if="tc.status === 'started'">⏳ 运行中...</span>
+                  <span class="tool-call-status" v-else-if="tc.status === 'completed'">✅ 完成</span>
+                  <span class="tool-call-status" v-else>❌ 失败</span>
+                </summary>
+                <div class="tool-call-detail">
+                  <div class="tool-call-section">
+                    <strong>参数：</strong>
+                    <pre>{{ JSON.stringify(tc.input, null, 2) }}</pre>
+                  </div>
+                  <div v-if="tc.status === 'completed' && tc.result" class="tool-call-section">
+                    <strong>结果：</strong>
+                    <pre>{{ typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result, null, 2) }}</pre>
+                  </div>
+                  <div v-if="tc.status === 'error' && tc.error" class="tool-call-section tool-call-error">
+                    <strong>错误：</strong>
+                    <pre>{{ tc.error }}</pre>
+                  </div>
                 </div>
-
-                <!-- Separator + Add custom service -->
-                <div class="services-dropdown-divider"></div>
-                <div>
-                  <button class="services-dropdown-add-btn" @click="openAddService">
-                    <span class="services-dropdown-add-icon">+</span>
-                    <span>添加自定义服务</span>
-                  </button>
-                </div>
-              </div>
+              </details>
             </div>
-          </div>
-
-          <!-- Input row -->
-          <div class="composer">
-            <textarea
-              ref="inputEl"
-              v-model="inputText"
-              placeholder="输入你的问题… (Enter 发送，Shift+Enter 换行)"
-              rows="1"
-              @keydown="onKeydown"
-              @input="autoResize"
-              :disabled="isStreaming"
-            ></textarea>
-            <button class="send" @click="onSend" :disabled="isStreaming || !inputText.trim()">发送</button>
-          </div>
-          <div class="hint">
-            <span class="kbd">↵</span> 发送 · <span class="kbd">⇧</span>+<span class="kbd">↵</span> 换行
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Config Panel -->
-    <div class="config-overlay" v-if="showConfig" @click.self="showConfig = false">
-      <div class="config-panel config-panel--wide">
-        <h2>{{ editingNew ? '添加供应商' : '供应商配置' }}</h2>
-
-        <template v-if="!editingNew">
-          <div class="config-provider-list">
-            <div
-              v-for="(p, name) in editProviders"
-              :key="name"
-              class="config-provider-card"
-              :class="{ active: editActiveProvider === name }"
-              @click="editActiveProvider = name"
-            >
-              <div class="card-body" style="flex:1">
-                <div class="card-name">{{ name }}</div>
-                <div class="card-model">{{ p.model }}</div>
-              </div>
-              <div class="card-actions">
-                <span class="card-btn-edit" @click.stop="startEditingProvider(name)" title="编辑">✎</span>
-                <span class="card-btn-del" @click.stop="removeProvider(name)" title="删除">✕</span>
-              </div>
-            </div>
-            <div class="config-provider-card config-provider-card--add" @click="startAddProvider">
-              <span style="font-size:20px;color:var(--celadon)">+</span>
-              <span style="font-size:13px;color:var(--ink-muted)">添加供应商</span>
-            </div>
-          </div>
-        </template>
-
-        <template v-if="editingNew">
-          <div class="config-group">
-            <label>名称</label>
-            <input v-model="editingName" placeholder="my-model" :disabled="!isNewProvider" />
-          </div>
-          <div class="config-group">
-            <label>协议</label>
-            <select v-model="editingProtocol">
-              <option value="anthropic">Anthropic (Claude)</option>
-              <option value="openai">OpenAI</option>
-            </select>
-          </div>
-          <div class="config-group">
-            <label>Model</label>
-            <input v-model="editingModel" placeholder="claude-sonnet-4-20250514" />
-          </div>
-          <div class="config-group">
-            <label>Base URL</label>
-            <input v-model="editingBaseUrl" placeholder="https://api.anthropic.com" />
-          </div>
-          <div class="config-group">
-            <label>API Key</label>
-            <div class="config-api-key-wrap">
-              <input
-                :type="showEditingKey ? 'text' : 'password'"
-                v-model="editingApiKey"
-                :placeholder="isNewProvider ? 'sk-...' : '留空则不修改'"
-              />
-              <span class="toggle-vis" @click="showEditingKey = !showEditingKey">
-                {{ showEditingKey ? '隐藏' : '显示' }}
+            <details class="thinking-wrap" v-if="streamThinking" :open="false">
+              <summary class="thinking-summary">深度思考</summary>
+              <div class="thinking-content">{{ streamThinking }}</div>
+            </details>
+            <div class="bubble">
+              <div class="markdown-body" v-if="streamContent" v-html="renderMarkdown(streamContent)"></div>
+              <span class="typing" v-else>
+                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
               </span>
             </div>
           </div>
-        </template>
-
-        <div class="config-actions">
-          <template v-if="editingNew">
-            <button class="btn-ghost" @click="cancelEditingProvider">取消</button>
-            <button class="btn-primary" @click="saveEditingProvider">
-              {{ isNewProvider ? '添加' : '保存修改' }}
-            </button>
-          </template>
-          <template v-else>
-            <button class="btn-ghost" @click="showConfig = false">关闭</button>
-          </template>
         </div>
       </div>
     </div>
 
-    <!-- Add Service Modal -->
-    <div class="config-overlay" v-if="showAddServiceModal" @click.self="cancelAddService">
-      <div class="config-panel">
-        <h2>添加自定义服务</h2>
-
-        <div class="config-group">
-          <label>名称 *</label>
-          <input v-model="newService.name" placeholder="my_service" />
-        </div>
-        <div class="config-group">
-          <label>描述</label>
-          <input v-model="newService.description" placeholder="描述此服务的功能，模型据此决定何时调用" />
-        </div>
-        <div class="config-group">
-          <label>URL *</label>
-          <input v-model="newService.url" placeholder="https://api.example.com/endpoint" />
-        </div>
-        <div class="config-group">
-          <label>方法</label>
-          <select v-model="newService.method">
-            <option value="POST">POST</option>
-            <option value="GET">GET</option>
-            <option value="PUT">PUT</option>
-            <option value="DELETE">DELETE</option>
-          </select>
-        </div>
-        <div class="config-group">
-          <label>请求体模板 (JSON)</label>
-          <textarea
-            v-model="newService.requestTemplate"
-            :placeholder="`{\\\&quot;city\\\&quot;: \\\&quot;{city}\\\&quot;, \\\&quot;days\\\&quot;: 3}  {param} 为参数占位，将由模型填写`"
-            rows="4"
-          ></textarea>
-        </div>
-        <div class="config-group">
-          <label>请求头 (JSON, 可选)</label>
-          <input v-model="newService.headers" placeholder='{"Content-Type": "application/json"}' />
-        </div>
-        <div class="config-group">
-          <label>超时 (秒)</label>
-          <input v-model.number="newService.timeout" type="number" placeholder="30" />
-        </div>
-
-        <div class="services-add-error" v-if="addServiceError">{{ addServiceError }}</div>
-
-        <div class="config-actions">
-          <button class="btn-ghost" @click="cancelAddService">取消</button>
-          <button class="btn-primary" @click="submitAddService" :disabled="addingService">
-            {{ addingService ? '注册中...' : '注册服务' }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- Floating Composer -->
+    <Composer placeholder="请输入你的问题… (Enter 发送，Shift+Enter 换行)" />
   </div>
 </template>
 
@@ -407,7 +125,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChat } from '../composables/useChat'
-import { useAuth } from '../composables/useAuth'
+import Composer from '../components/Composer.vue'
 
 const router = useRouter()
 const {
@@ -419,64 +137,12 @@ const {
   streamThinking,
   streamToolCalls,
   loadConversations,
-  loadMessages,
-  deleteConversation,
-  sendMessage,
-  selectConversation,
-  newConversation,
   renderMarkdown,
 } = useChat()
 
-const { user, logout, authHeaders } = useAuth()
-
-const userInitial = computed(() => {
-  return (user.value?.username?.[0] || '?').toUpperCase()
-})
-
 // ── State ──
-const sidebarCollapsed = ref(false)
-const mobileSidebarOpen = ref(false)
-const inputText = ref('')
-const inputEl = ref<HTMLTextAreaElement | null>(null)
 const chatEl = ref<HTMLElement | null>(null)
 const apiConnected = ref(false)
-const thinkingEnabled = ref(false)
-const servicesDropdownOpen = ref(false)
-const serviceList = ref<{ name: string; description: string; url?: string; method?: string }[]>([])
-const enabledServiceNames = ref<string[]>([])
-const showAddServiceModal = ref(false)
-const addingService = ref(false)
-const addServiceError = ref('')
-const newService = ref({
-  name: '',
-  description: '',
-  url: '',
-  method: 'POST',
-  requestTemplate: '',
-  headers: '',
-  timeout: 30,
-})
-const activeProviderId = ref('')
-
-// ── User config state ──
-const showConfig = ref(false)
-const userProviders = ref<any[]>([])
-const editProviders = ref<Record<string, any>>({})
-const editActiveProvider = ref('')
-const editingNew = ref(false)
-const isNewProvider = ref(false)
-const editingName = ref('')
-const editingProtocol = ref('anthropic')
-const editingModel = ref('')
-const editingBaseUrl = ref('')
-const editingApiKey = ref('')
-const showEditingKey = ref(false)
-
-// ── Rename ──
-const renamingConv = ref(false)
-const renameConvId = ref<string | null>(null)
-const renameTitle = ref('')
-const renameInput = ref<HTMLInputElement | null>(null)
 
 // ── Computed ──
 const currentConvTitle = computed(() => {
@@ -485,75 +151,13 @@ const currentConvTitle = computed(() => {
   return conv ? conv.title : '新会话'
 })
 
-// ── Sidebar ──
-function toggleMobileSidebar() {
-  mobileSidebarOpen.value = !mobileSidebarOpen.value
-}
-
-async function selectConv(id: string) {
-  await selectConversation(id)
-  if (mobileSidebarOpen.value) mobileSidebarOpen.value = false
-}
-
-function startRename(conv: any) {
-  renamingConv.value = true
-  renameConvId.value = conv.id
-  renameTitle.value = conv.title
-  nextTick(() => renameInput.value?.focus())
-}
-
-async function doRename() {
-  if (!renameConvId.value || !renameTitle.value.trim()) return
-  try {
-    await fetch(`/api/conversations/${renameConvId.value}/rename`, {
-      method: 'PUT',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: renameTitle.value.trim() }),
-    })
-    await loadConversations()
-  } catch {}
-  cancelRename()
-}
-
-function cancelRename() {
-  renamingConv.value = false
-  renameConvId.value = null
-  renameTitle.value = ''
-}
-
-async function clearConversation() {
-  if (!currentConvId.value) return
-  if (!confirm('确定清空当前会话？')) return
-  await deleteConversation(currentConvId.value)
-}
-
-// ── Chat ──
-async function onSend() {
-  const text = inputText.value.trim()
-  if (!text || isStreaming.value) return
-  inputText.value = ''
-  if (inputEl.value) inputEl.value.style.height = 'auto'
-  await sendMessage(text, thinkingEnabled.value, enabledServiceNames.value)
-}
-
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    onSend()
-  }
-}
-
-function autoResize() {
-  const el = inputEl.value
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 140) + 'px'
+function openMobileSidebar() {
+  window.dispatchEvent(new CustomEvent('phenomics:toggle-sidebar'))
 }
 
 function exampleClick(text: string) {
-  inputText.value = text
-  if (inputEl.value) autoResize()
-  inputEl.value?.focus()
+  // populate composer input via event
+  window.dispatchEvent(new CustomEvent('phenomics:example', { detail: text }))
 }
 
 function formatTime(iso: string): string {
@@ -563,224 +167,6 @@ function formatTime(iso: string): string {
   } catch { return '' }
 }
 
-// ── User providers config ──
-async function loadUserProviders() {
-  try {
-    const r = await fetch('/api/user/providers', { headers: authHeaders() })
-    if (!r.ok) return
-    userProviders.value = await r.json()
-    editProviders.value = {}
-    for (const p of userProviders.value) {
-      editProviders.value[p.provider_name] = {
-        id: p.id,
-        protocol: p.protocol,
-        model: p.model,
-        base_url: p.base_url,
-        api_key_masked: p.api_key_masked,
-        is_active: p.is_active,
-      }
-      if (p.is_active) {
-        editActiveProvider.value = p.provider_name
-        activeProviderId.value = p.id
-      }
-    }
-    // If there's at least one provider but none active, activate the first one
-    if (!activeProviderId.value && userProviders.value.length > 0) {
-      await switchProvider(userProviders.value[0].id)
-    }
-  } catch {}
-}
-
-async function onProviderChange() {
-  if (!activeProviderId.value) return
-  await switchProvider(activeProviderId.value)
-}
-
-async function switchProvider(providerId: string) {
-  try {
-    await fetch(`/api/user/providers/${providerId}/activate`, {
-      method: 'PUT',
-      headers: authHeaders(),
-    })
-    activeProviderId.value = providerId
-    await loadUserProviders()
-  } catch {}
-}
-
-function openConfig() {
-  loadUserProviders()
-  editingNew.value = false
-  showConfig.value = true
-}
-
-function startEditingProvider(name: string) {
-  const p = editProviders.value[name]
-  if (!p) return
-  editingName.value = name
-  editingProtocol.value = p.protocol
-  editingModel.value = p.model
-  editingBaseUrl.value = p.base_url
-  editingApiKey.value = ''
-  isNewProvider.value = false
-  editingNew.value = true
-}
-
-function startAddProvider() {
-  editingName.value = ''
-  editingProtocol.value = 'anthropic'
-  editingModel.value = ''
-  editingBaseUrl.value = ''
-  editingApiKey.value = ''
-  isNewProvider.value = true
-  editingNew.value = true
-}
-
-function cancelEditingProvider() {
-  editingNew.value = false
-}
-
-async function saveEditingProvider() {
-  const name = editingName.value.trim()
-  if (!name) { alert('请输入供应商名称'); return }
-  if (!editingModel.value.trim()) { alert('请输入模型名称'); return }
-  if (!editingBaseUrl.value.trim()) { alert('请输入 Base URL'); return }
-  if (isNewProvider.value && !editingApiKey.value.trim()) { alert('请输入 API Key'); return }
-
-  const existing = editProviders.value[name]
-  const body: any = {
-    provider_name: name,
-    protocol: editingProtocol.value,
-    model: editingModel.value.trim(),
-    base_url: editingBaseUrl.value.trim(),
-    api_key: editingApiKey.value.trim() || '',
-  }
-  if (!isNewProvider.value && existing?.id) {
-    body.id = existing.id
-  }
-
-  try {
-    const r = await fetch('/api/user/providers', {
-      method: 'PUT',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!r.ok) throw new Error(await r.text())
-    editingNew.value = false
-    await loadUserProviders()
-  } catch (e: any) {
-    alert('保存失败: ' + e.message)
-  }
-}
-
-async function removeProvider(name: string) {
-  const p = editProviders.value[name]
-  if (!p?.id) return
-  if (!confirm(`确定删除供应商「${name}」？`)) return
-  try {
-    await fetch(`/api/user/providers/${p.id}`, {
-      method: 'DELETE',
-      headers: authHeaders(),
-    })
-    await loadUserProviders()
-  } catch {}
-}
-
-// ── Services ──
-function toggleService(name: string) {
-  const idx = enabledServiceNames.value.indexOf(name)
-  if (idx !== -1) {
-    enabledServiceNames.value.splice(idx, 1)
-  } else {
-    enabledServiceNames.value.push(name)
-  }
-}
-
-function cancelAddService() {
-  showAddServiceModal.value = false
-  addServiceError.value = ''
-  newService.value = { name: '', description: '', url: '', method: 'POST', requestTemplate: '', headers: '', timeout: 30 }
-}
-
-function openAddService() {
-  servicesDropdownOpen.value = false
-  showAddServiceModal.value = true
-}
-
-async function submitAddService() {
-  const svc = newService.value
-  if (!svc.name.trim()) { addServiceError.value = '请输入服务名称'; return }
-  if (!svc.url.trim()) { addServiceError.value = '请输入 URL'; return }
-
-  addingService.value = true
-  addServiceError.value = ''
-
-  let requestTemplate = {}
-  let headers = {}
-
-  if (svc.requestTemplate.trim()) {
-    try {
-      requestTemplate = JSON.parse(svc.requestTemplate.trim())
-    } catch {
-      addServiceError.value = '请求体模板不是有效的 JSON'
-      addingService.value = false
-      return
-    }
-  }
-  if (svc.headers.trim()) {
-    try {
-      headers = JSON.parse(svc.headers.trim())
-    } catch {
-      addServiceError.value = '请求头不是有效的 JSON'
-      addingService.value = false
-      return
-    }
-  }
-
-  try {
-    const r = await fetch('/api/services', {
-      method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: svc.name.trim(),
-        description: svc.description.trim(),
-        url: svc.url.trim(),
-        method: svc.method,
-        headers,
-        request_template: requestTemplate,
-        timeout: svc.timeout || 30,
-      }),
-    })
-    if (!r.ok) {
-      const err = await r.json()
-      addServiceError.value = err.detail || '注册失败'
-      return
-    }
-    // Success
-    cancelAddService()
-    await loadServices()
-  } catch (e: any) {
-    addServiceError.value = '网络错误: ' + e.message
-  } finally {
-    addingService.value = false
-  }
-}
-
-async function loadServices() {
-  try {
-    const r = await fetch(`/api/services`, { headers: authHeaders() })
-    if (r.ok) serviceList.value = await r.json()
-  } catch {}
-}
-
-// Close services dropdown on outside click
-function onServicesDocClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  if (servicesDropdownOpen.value && !target.closest('.services-dropdown')) {
-    servicesDropdownOpen.value = false
-  }
-}
-
-// ── Health ──
 async function checkHealth() {
   try {
     const r = await fetch('/api/config')
@@ -788,25 +174,261 @@ async function checkHealth() {
   } catch { apiConnected.value = false }
 }
 
-// ── Auto-scroll ──
 watch([messages, streamContent], () => {
   nextTick(() => {
     if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight
   })
 })
 
-// ── Init ──
 onMounted(async () => {
   if (!localStorage.getItem('phenomics_token')) {
     router.push('/login')
     return
   }
   await loadConversations()
-  await loadUserProviders()
-  await loadServices()
   await checkHealth()
   setInterval(checkHealth, 15000)
-  document.addEventListener('click', onServicesDocClick)
-  setTimeout(() => inputEl.value?.focus(), 200)
+  await nextTick()
 })
 </script>
+
+<style scoped>
+.chat-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Topbar */
+.topbar {
+  display: flex;
+  align-items: center;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--paper);
+  gap: 12px;
+  flex-shrink: 0;
+}
+.sidebar-toggle {
+  width: 34px; height: 34px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--paper);
+  color: var(--ink-muted); cursor: pointer;
+  display: none;
+  align-items: center; justify-content: center; font-size: 16px; transition: all .15s;
+}
+.sidebar-toggle:hover { background: var(--rice); color: var(--ink); }
+.topbar-title {
+  font-family: var(--display); font-weight: 600; font-size: 16px;
+  color: var(--ink); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.top-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* Chat */
+.chat {
+  flex: 1; overflow-y: auto; padding: 16px 0; scroll-behavior: smooth;
+}
+.chat::-webkit-scrollbar { width: 5px; }
+.chat::-webkit-scrollbar-track { background: transparent; }
+.chat::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+.chat-inner { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+
+/* Welcome */
+.welcome {
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: 64px 24px 32px;
+}
+.welcome-icon {
+  width: 64px; height: 64px; border-radius: 20px;
+  background: var(--celadon-pale);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--display); font-weight: 700; font-size: 28px; color: var(--celadon);
+  margin-bottom: 16px;
+}
+.welcome h2 {
+  font-family: var(--display); font-weight: 700; font-size: 20px;
+  color: var(--ink); letter-spacing: .02em; margin-bottom: 8px;
+}
+.welcome p { font-size: 14px; color: var(--ink-muted); max-width: 400px; line-height: 1.6; }
+.welcome .examples {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px;
+}
+.welcome .examples span {
+  font-size: 12px; color: var(--ink-muted);
+  border: 1px solid var(--border); padding: 6px 14px; border-radius: 999px;
+  cursor: pointer; transition: all .15s; background: var(--rice);
+}
+.welcome .examples span:hover {
+  border-color: var(--celadon); color: var(--celadon); background: var(--celadon-pale);
+}
+
+/* Messages */
+.msg { display: flex; gap: 12px; margin: 24px 0; align-items: flex-start; }
+.msg.user { justify-content: flex-end; }
+.msg > .col { min-width: 0; max-width: 86%; display: flex; flex-direction: column; }
+.msg.user > .col { align-items: flex-end; }
+
+.avatar {
+  width: 34px; height: 34px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; flex-shrink: 0; font-family: var(--display); font-weight: 600;
+}
+.avatar.bot { background: var(--celadon-pale); color: var(--celadon); border: 1px solid var(--celadon-dim); }
+.avatar.user { background: var(--earth-pale); color: var(--earth); border: 1px solid var(--border); }
+
+.bubble {
+  display: inline-block; border-radius: 16px; padding: 10px 16px;
+  line-height: 1.75; font-size: 14px;
+  overflow-wrap: break-word;
+}
+.msg.bot .bubble {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--ink);
+  position: relative;
+  padding-left: 18px;
+}
+.msg.bot .bubble::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 4px; bottom: 4px;
+  width: 3px; border-radius: 2px;
+  background: var(--celadon-dim);
+  opacity: .45;
+}
+.msg.user .bubble {
+  background: var(--celadon);
+  color: #fff;
+  border: 1px solid transparent;
+  box-shadow: 0 1px 3px rgba(26,26,46,.06);
+  white-space: pre-wrap;
+}
+
+.meta { font-size: 11px; color: var(--ink-muted); margin-top: 6px; padding: 0 4px; }
+
+/* Thinking block */
+.thinking-wrap {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  overflow: hidden;
+}
+.thinking-summary {
+  padding: 8px 12px; font-size: 12px; font-family: var(--mono);
+  color: var(--ink-muted); cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 6px;
+}
+.thinking-summary:hover { background: var(--rice); }
+.thinking-summary::before {
+  content: '▶'; display: inline-block; transition: transform .2s;
+  font-size: 10px; color: var(--celadon-dim);
+}
+.thinking-wrap[open] .thinking-summary::before { transform: rotate(90deg); }
+.thinking-content {
+  padding: 10px 14px 14px; font-size: 13px; font-family: var(--mono);
+  color: var(--ink-muted); line-height: 1.6; white-space: pre-wrap;
+  background: var(--rice); border-top: 1px solid var(--border-light);
+}
+
+/* Typing indicator */
+.typing { display: inline-flex; gap: 5px; align-items: center; padding: 2px 0; }
+.dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--celadon-dim);
+  animation: bounce 1.3s infinite ease-in-out;
+}
+.dot:nth-child(2) { animation-delay: .16s; }
+.dot:nth-child(3) { animation-delay: .32s; }
+@keyframes bounce {
+  0%,80%,100% { transform: translateY(0); opacity: .6; }
+  40% { transform: translateY(-6px); opacity: 1; }
+}
+
+/* Markdown in bot bubbles */
+.msg.bot .markdown-body {
+  background: transparent; color: var(--ink);
+  font-family: var(--body); font-size: 14px; line-height: 1.75;
+}
+.msg.bot .markdown-body h1,
+.msg.bot .markdown-body h2,
+.msg.bot .markdown-body h3,
+.msg.bot .markdown-body h4,
+.msg.bot .markdown-body h5,
+.msg.bot .markdown-body h6 {
+  font-family: var(--display); color: var(--ink); margin: 1em 0 0.4em;
+  font-weight: 700; line-height: 1.3;
+}
+.msg.bot .markdown-body h1 { font-size: 16px; border-bottom: none; }
+.msg.bot .markdown-body h2 { font-size: 15px; }
+.msg.bot .markdown-body h3 { font-size: 14px; }
+.msg.bot .markdown-body p { margin: 0 0 0.65em; }
+.msg.bot .markdown-body p:last-child { margin-bottom: 0; }
+.msg.bot .markdown-body ul, .msg.bot .markdown-body ol { padding-left: 1.4em; margin: 0.4em 0; }
+.msg.bot .markdown-body li { margin: 0.2em 0; }
+.msg.bot .markdown-body li > p { margin: 0; }
+.msg.bot .markdown-body code {
+  background: var(--rice-dark); color: var(--ink-light);
+  padding: 2px 6px; border-radius: 5px;
+  font-family: var(--mono); font-size: 12px;
+}
+.msg.bot .markdown-body pre {
+  background: var(--rice-dark); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px; overflow-x: auto; margin: 0.65em 0;
+  box-shadow: inset 0 1px 4px rgba(0,0,0,.03);
+}
+.msg.bot .markdown-body pre code {
+  background: none; padding: 0; border-radius: 0;
+  font-size: 12px; line-height: 1.6;
+}
+.msg.bot .markdown-body table { border-collapse: collapse; margin: 0.65em 0; font-size: 13px; width: 100%; }
+.msg.bot .markdown-body th, .msg.bot .markdown-body td {
+  border: 1px solid var(--border); padding: 8px 12px; text-align: left;
+}
+.msg.bot .markdown-body th { background: var(--rice-dark); font-weight: 600; font-family: var(--display); }
+.msg.bot .markdown-body blockquote {
+  border-left: 3px solid var(--celadon-dim); padding: 6px 14px;
+  margin: 0.65em 0; color: var(--ink-muted); background: var(--rice);
+  border-radius: 0 8px 8px 0; line-height: 1.6;
+}
+.msg.bot .markdown-body a { color: var(--ink-blue); text-decoration: underline; text-underline-offset: 2px; }
+.msg.bot .markdown-body a:hover { color: var(--ink-blue-hover); }
+.msg.bot .markdown-body hr { border: none; border-top: 1px solid var(--border-light); margin: 1em 0; }
+.msg.bot .markdown-body strong { font-weight: 700; color: var(--ink); }
+.msg.bot .markdown-body img { max-width: 100%; border-radius: 8px; margin: 0.5em 0; }
+
+/* Tool Call Cards */
+.tool-calls-area { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.tool-call-card { border: 1px solid var(--border); border-radius: 10px; background: transparent; overflow: hidden; }
+.tool-call-card.error { border-color: var(--earth); }
+.tool-call-summary {
+  padding: 8px 12px; font-size: 13px; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 6px; color: var(--ink-light);
+}
+.tool-call-summary:hover { background: var(--rice); }
+.tool-call-summary::before {
+  content: '▶'; display: inline-block; transition: transform .2s;
+  font-size: 10px; color: var(--celadon-dim);
+}
+.tool-call-card[open] .tool-call-summary::before { transform: rotate(90deg); }
+.tool-call-icon { font-size: 14px; flex-shrink: 0; }
+.tool-call-name { font-weight: 600; font-family: var(--mono); font-size: 12px; }
+.tool-call-status { margin-left: auto; font-size: 11px; color: var(--ink-muted); font-family: var(--mono); }
+.tool-call-detail { padding: 8px 12px 12px; border-top: 1px solid var(--border-light); background: #faf8f4; font-size: 13px; }
+.tool-call-section { margin-bottom: 8px; }
+.tool-call-section:last-child { margin-bottom: 0; }
+.tool-call-section strong { display: block; font-size: 11px; color: var(--ink-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+.tool-call-section pre {
+  background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-all; color: var(--ink-light);
+}
+.tool-call-error pre { color: var(--earth); border-color: var(--earth); background: #fff8f2; }
+
+@media (max-width: 768px) {
+  .sidebar-toggle { display: flex; }
+  .topbar { padding: 10px 16px; }
+  .chat-inner { padding: 0 16px; }
+  .msg > .col { max-width: 88%; }
+  .msg { margin: 18px 0; }
+}
+</style>
