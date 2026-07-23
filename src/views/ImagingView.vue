@@ -110,6 +110,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useChat } from '../composables/useChat'
@@ -234,11 +235,17 @@ function checkApi() {
 // ── 聊天 ──
 function renderMd(text: string) {
   if (!text) return ''
-  return marked.parse(text, { async: false }) as string
+  // marked v15 sync parse + DOMPurify to prevent XSS from model output (M4/M10).
+  return DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
 }
 
 // ── 影像结果处理 ──
 const LAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c']
+
+// Track which tool_call results we've already rendered to the map, so a
+// reactive message update (e.g. streaming finishing) doesn't re-add the
+// same layers repeatedly (M12).
+const _renderedResultKeys = new Set<string>()
 
 function toDroneProxyUrl(url: string): string {
   const match = url.match(/^https?:\/\/[^/]+(\/.*)$/)
@@ -252,6 +259,10 @@ watch(messages, (msgs) => {
     if (msg.role === 'assistant' && msg.tool_calls) {
       for (const tc of msg.tool_calls) {
         if (tc.tool_name === 'search_images' && tc.status === 'completed' && tc.result) {
+          // Dedup: each unique (msg, tool_call) result renders once (M12).
+          const key = `${msg.id}:${tc.tool_name}:${JSON.stringify(tc.result)}`
+          if (_renderedResultKeys.has(key)) continue
+          _renderedResultKeys.add(key)
           handleSearchResults(tc.result)
         }
       }
@@ -288,6 +299,7 @@ function clearLayers() {
   tileLayerMap.forEach(layer => layer.remove()); tileLayerMap.clear()
   rectMap.forEach(rect => rect.remove()); rectMap.clear()
   imageLayers.value = []; selectedImage.value = null
+  _renderedResultKeys.clear()
 }
 
 function selectLayer(layer: any) { selectedImage.value = layer }

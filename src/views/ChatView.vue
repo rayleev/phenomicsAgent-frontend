@@ -122,7 +122,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChat } from '../composables/useChat'
 import Composer from '../components/Composer.vue'
@@ -143,6 +143,7 @@ const {
 // ── State ──
 const chatEl = ref<HTMLElement | null>(null)
 const apiConnected = ref(false)
+let healthIntervalId: ReturnType<typeof setInterval> | null = null
 
 // ── Computed ──
 const currentConvTitle = computed(() => {
@@ -187,8 +188,17 @@ onMounted(async () => {
   }
   await loadConversations()
   await checkHealth()
-  setInterval(checkHealth, 15000)
+  healthIntervalId = setInterval(checkHealth, 15000)
   await nextTick()
+})
+
+onUnmounted(() => {
+  // Clean up the health-check interval so it doesn't keep running and
+  // mutating state after the component is gone (M11).
+  if (healthIntervalId !== null) {
+    clearInterval(healthIntervalId)
+    healthIntervalId = null
+  }
 })
 </script>
 

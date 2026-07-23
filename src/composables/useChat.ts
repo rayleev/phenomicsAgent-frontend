@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 const API_BASE = ''
 
@@ -7,6 +8,11 @@ function authHeaders(): Record<string, string> {
   const token = localStorage.getItem('phenomics_token')
   if (!token) return {}
   return { 'Authorization': `Bearer ${token}` }
+}
+
+/** Get the raw bearer token (for query-param auth on EventSource). */
+function rawToken(): string {
+  return localStorage.getItem('phenomics_token') || ''
 }
 
 export interface ToolCallInfo {
@@ -137,7 +143,10 @@ export function useChat() {
 
       // Create SSE connection (shared so it can be aborted)
       closeActiveEventSource()
-      const es = new EventSource(`${API_BASE}/api/chat/stream/${sessionId}`)
+      // EventSource cannot send Authorization headers, so the JWT is passed
+      // as a query param (verified by the backend) (M13 + C5).
+      const streamUrl = `${API_BASE}/api/chat/stream/${sessionId}?token=${encodeURIComponent(rawToken())}`
+      const es = new EventSource(streamUrl)
       activeEventSource = es
 
       es.addEventListener('content', (e: MessageEvent) => {
@@ -207,7 +216,6 @@ export function useChat() {
           })
           streamContent.value = ''
           streamThinking.value = ''
-          streamToolCalls.value = ''
           streamToolCalls.value = []
         }
       })
@@ -244,23 +252,37 @@ export function useChat() {
   }
 
   async function selectConversation(convId: string) {
-    if (isStreaming.value) return
+    if (isStreaming.value) {
+      // Give the user feedback instead of silently ignoring (L3).
+      console.warn('Cannot switch conversation while streaming; stop the current response first.')
+      return
+    }
     currentConvId.value = convId
     await loadMessages(convId)
+    // On mobile, close the sidebar after selecting a session (L2).
+    window.dispatchEvent(new CustomEvent('phenomics:close-mobile'))
   }
 
   function newConversation() {
-    if (isStreaming.value) return
+    if (isStreaming.value) {
+      console.warn('Cannot start a new conversation while streaming; stop the current response first.')
+      return
+    }
     closeActiveEventSource()
     currentConvId.value = null
     messages.value = []
     streamContent.value = ''
     streamThinking.value = ''
     streamToolCalls.value = []
+    // On mobile, close the sidebar after starting a new session (L2).
+    window.dispatchEvent(new CustomEvent('phenomics:close-mobile'))
   }
 
   function renderMarkdown(text: string): string {
-    return marked.parse(text, { async: false }) as string
+    // marked v15: parse() is synchronous by default and returns a string.
+    // DOMPurify sanitizes the HTML to prevent XSS from model output (M4).
+    const rawHtml = marked.parse(text, { async: false }) as string
+    return DOMPurify.sanitize(rawHtml)
   }
 
   return {

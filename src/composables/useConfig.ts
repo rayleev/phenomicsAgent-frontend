@@ -35,17 +35,21 @@ export function useConfig() {
     saving.value = true
     saveSuccess.value = false
     try {
-      // Map frontend's api_key_masked back to api_key for the backend
+      // Map frontend's api_key_masked back to api_key for the backend.
+      // If the user didn't change the key, the field holds a masked value
+      // like "sk-***" — send an empty string so the backend keeps the
+      // existing key instead of overwriting it with the mask (L4).
       const body: any = {
         provider: updated.provider,
         providers: {} as Record<string, any>,
       }
       for (const [name, p] of Object.entries(updated.providers)) {
+        const key = p.api_key || p.api_key_masked || ''
         body.providers[name] = {
           protocol: p.protocol,
           model: p.model,
           base_url: p.base_url,
-          api_key: p.api_key || p.api_key_masked || '',
+          api_key: key.includes('***') ? '' : key,
         }
       }
       const r = await fetch(`${API_BASE}/api/config`, {

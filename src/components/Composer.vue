@@ -530,6 +530,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('click', onServicesDocClick)
   window.removeEventListener('phenomics:example', onExample as EventListener)
 })
 
