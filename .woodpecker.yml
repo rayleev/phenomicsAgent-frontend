@@ -1,39 +1,48 @@
-when:
-  - event: manual
-  - event: push
-    branch: master
+# Woodpecker CI — phenomicsAgent 前端
+# 仿照 droneImaging 项目: build（注入天地图 key）→ deploy（停旧 → 起新）
+#
+# 所需 Woodpecker secret（在仓库 Settings → Secrets 配置）:
+#   env_file  → 前端环境变量，格式为 KEY=VALUE 行：
+#               VITE_TIANDITU_KEY=<天地图浏览器端 key>
+#
+# 说明: .env 已 gitignored，CI 写入后 Vite 构建时自动加载 VITE_ 前缀变量。
+# 访问端口: 主机 8080 → 容器 80（nginx）。
 
 steps:
   - name: build
-    image: plugins/docker
-    settings:
-      repo: phenomics-agent-frontend
-      tags: ${CI_BUILD_NUMBER}
-      dry_run: true
-      dockerfile: Dockerfile
-      context: .
+    image: docker:24
+    commands:
+      - |
+        set -e
+        # 将 secret 写入 .env，Vite 构建时自动加载 VITE_ 前缀变量
+        echo "$ENV_FILE" > .env
+        docker build -t phenomics-agent-frontend:latest .
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      ENV_FILE:
+        from_secret: env_file
 
   - name: deploy
-    image: docker
-    volumes:
-      - name: docker-sock
-        path: /var/run/docker.sock
-      - name: deploy-dir
-        path: /home/root01/phenomics-agent
+    image: docker:24
     commands:
-      - cat /run/secrets/env_file > /home/root01/phenomics-agent/.env
-      - cd /home/root01/phenomics-agent
-      - docker compose -f docker-compose.frontend.yml up -d --build phenomics-frontend
-      - docker image prune -f
+      - |
+        set -e
 
-volumes:
-  - name: docker-sock
-    host:
-      path: /var/run/docker.sock
-  - name: deploy-dir
-    host:
-      path: /home/root01/phenomics-agent
+        # ── 1. 确保 phenomics-net 网络存在 ──
+        docker network inspect phenomics-net >/dev/null 2>&1 || docker network create phenomics-net
 
-secrets:
-  - name: env_file
-    secret: env_file
+        # ── 2. 停旧容器 ──
+        docker stop phenomics-frontend 2>/dev/null || true
+        docker rm -f phenomics-frontend 2>/dev/null || true
+
+        # ── 3. 启动新容器 ──
+        docker run -d \
+          --name phenomics-frontend \
+          --network phenomics-net \
+          --restart unless-stopped \
+          -p 8080:80 \
+          phenomics-agent-frontend:latest
+        echo "前端部署成功"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
