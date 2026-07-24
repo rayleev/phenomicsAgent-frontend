@@ -1,0 +1,17 @@
+services:
+  phenomics-frontend:
+    image: phenomics-agent-frontend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_TIANDITU_KEY: ${VITE_TIANDITU_KEY}
+    container_name: phenomics-frontend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+networks:
+  default:
+    name: phenomics-net
+    external: true

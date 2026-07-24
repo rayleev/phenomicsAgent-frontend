@@ -18,12 +18,22 @@ steps:
     volumes:
       - name: docker-sock
         path: /var/run/docker.sock
+      - name: deploy-dir
+        path: /home/root01/phenomics-agent
     commands:
+      - cat /run/secrets/env_file > /home/root01/phenomics-agent/.env
       - cd /home/root01/phenomics-agent
-      - docker compose up -d --build phenomics-frontend
+      - docker compose -f docker-compose.frontend.yml up -d --build phenomics-frontend
       - docker image prune -f
 
 volumes:
   - name: docker-sock
     host:
       path: /var/run/docker.sock
+  - name: deploy-dir
+    host:
+      path: /home/root01/phenomics-agent
+
+secrets:
+  - name: env_file
+    secret: env_file
