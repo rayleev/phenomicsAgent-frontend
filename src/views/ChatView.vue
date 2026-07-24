@@ -292,7 +292,7 @@ onUnmounted(() => {
   overflow-wrap: break-word;
 }
 .msg.bot .bubble {
-  background: transparent;
+  background: var(--paper);
   border: 1px solid var(--border);
   color: var(--ink);
   position: relative;
@@ -307,9 +307,9 @@ onUnmounted(() => {
   opacity: .45;
 }
 .msg.user .bubble {
-  background: var(--celadon);
-  color: #fff;
-  border: 1px solid transparent;
+  background: var(--celadon-pale);
+  color: var(--ink);
+  border: 1px solid var(--celadon-dim);
   box-shadow: 0 1px 3px rgba(26,26,46,.06);
   white-space: pre-wrap;
 }
