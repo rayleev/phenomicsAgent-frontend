@@ -293,7 +293,7 @@ onUnmounted(() => {
 }
 .msg.bot .bubble {
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   color: var(--ink);
   position: relative;
   padding-left: 18px;
@@ -307,10 +307,10 @@ onUnmounted(() => {
   opacity: .45;
 }
 .msg.user .bubble {
-  background: var(--celadon-pale);
+  background: var(--rice-dark);
   color: var(--ink);
-  border: 1px solid var(--celadon-dim);
-  box-shadow: 0 1px 3px rgba(26,26,46,.06);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(26,26,46,.04);
   white-space: pre-wrap;
 }
 
