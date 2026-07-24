@@ -1,11 +1,8 @@
 # Woodpecker CI — phenomicsAgent 前端
 # 仿照 droneImaging 项目: build（注入天地图 key）→ deploy（停旧 → 起新）
 #
-# 所需 Woodpecker secret（在仓库 Settings → Secrets 配置）:
-#   env_file  → 前端环境变量，格式为 KEY=VALUE 行：
-#               VITE_TIANDITU_KEY=<天地图浏览器端 key>
-#
-# 说明: .env 已 gitignored，CI 写入后 Vite 构建时自动加载 VITE_ 前缀变量。
+# 配置统一存放在 /home/root01/deploy/phenomics-agent/frontend.env
+# 不再依赖 Woodpecker secret，直接读取宿主机上的配置文件。
 # 访问端口: 主机 8080 → 容器 80（nginx）。
 
 steps:
@@ -14,14 +11,11 @@ steps:
     commands:
       - |
         set -e
-        # 将 secret 写入 .env，Vite 构建时自动加载 VITE_ 前缀变量
-        echo "$ENV_FILE" > .env
+        # 从统一部署目录拷贝 .env，Vite 构建时自动加载 VITE_ 前缀变量
+        cp /home/root01/deploy/phenomics-agent/frontend.env .env
         docker build -t phenomics-agent-frontend:latest .
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      ENV_FILE:
-        from_secret: env_file
 
   - name: deploy
     image: docker:24
