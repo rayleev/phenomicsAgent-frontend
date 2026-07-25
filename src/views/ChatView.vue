@@ -27,7 +27,7 @@
         <!-- Messages -->
         <div v-for="msg in messages" :key="msg.id" class="msg" :class="msg.role">
           <template v-if="msg.role === 'assistant'">
-            <div class="avatar bot">农</div>
+            <div class="avatar assistant">农</div>
             <div class="col">
               <div v-if="msg.tool_calls && msg.tool_calls.length > 0" class="tool-calls-area">
                 <details v-for="(tc, tci) in msg.tool_calls" :key="tci" class="tool-call-card" :class="tc.status">
@@ -73,8 +73,8 @@
         </div>
 
         <!-- Streaming message -->
-        <div class="msg bot" v-if="isStreaming">
-          <div class="avatar bot">农</div>
+        <div class="msg assistant" v-if="isStreaming">
+          <div class="avatar assistant">农</div>
           <div class="col">
             <div v-if="streamToolCalls.length > 0" class="tool-calls-area">
               <details v-for="(tc, tci) in streamToolCalls" :key="'s-' + tci" class="tool-call-card" :class="tc.status" :open="true">
@@ -283,7 +283,7 @@ onUnmounted(() => {
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; flex-shrink: 0; font-family: var(--display); font-weight: 600;
 }
-.avatar.bot { background: var(--celadon-pale); color: var(--celadon); border: 1px solid var(--celadon-dim); }
+.avatar.assistant { background: var(--celadon-pale); color: var(--celadon); border: 1px solid var(--celadon-dim); }
 .avatar.user { background: var(--earth-pale); color: var(--earth); border: 1px solid var(--border); }
 
 .bubble {
@@ -291,14 +291,14 @@ onUnmounted(() => {
   line-height: 1.75; font-size: 14px;
   overflow-wrap: break-word;
 }
-.msg.bot .bubble {
+.msg.assistant .bubble {
   background: var(--paper);
   border: 1px solid var(--border-light);
   color: var(--ink);
   position: relative;
   padding-left: 18px;
 }
-.msg.bot .bubble::before {
+.msg.assistant .bubble::before {
   content: '';
   position: absolute;
   left: 0; top: 4px; bottom: 4px;
@@ -355,57 +355,57 @@ onUnmounted(() => {
   40% { transform: translateY(-6px); opacity: 1; }
 }
 
-/* Markdown in bot bubbles */
-.msg.bot .markdown-body {
+/* Markdown in assistant bubbles */
+.msg.assistant .markdown-body {
   background: transparent; color: var(--ink);
   font-family: var(--body); font-size: 14px; line-height: 1.75;
 }
-.msg.bot .markdown-body h1,
-.msg.bot .markdown-body h2,
-.msg.bot .markdown-body h3,
-.msg.bot .markdown-body h4,
-.msg.bot .markdown-body h5,
-.msg.bot .markdown-body h6 {
+.msg.assistant .markdown-body h1,
+.msg.assistant .markdown-body h2,
+.msg.assistant .markdown-body h3,
+.msg.assistant .markdown-body h4,
+.msg.assistant .markdown-body h5,
+.msg.assistant .markdown-body h6 {
   font-family: var(--display); color: var(--ink); margin: 1em 0 0.4em;
   font-weight: 700; line-height: 1.3;
 }
-.msg.bot .markdown-body h1 { font-size: 16px; border-bottom: none; }
-.msg.bot .markdown-body h2 { font-size: 15px; }
-.msg.bot .markdown-body h3 { font-size: 14px; }
-.msg.bot .markdown-body p { margin: 0 0 0.65em; }
-.msg.bot .markdown-body p:last-child { margin-bottom: 0; }
-.msg.bot .markdown-body ul, .msg.bot .markdown-body ol { padding-left: 1.4em; margin: 0.4em 0; }
-.msg.bot .markdown-body li { margin: 0.2em 0; }
-.msg.bot .markdown-body li > p { margin: 0; }
-.msg.bot .markdown-body code {
+.msg.assistant .markdown-body h1 { font-size: 16px; border-bottom: none; }
+.msg.assistant .markdown-body h2 { font-size: 15px; }
+.msg.assistant .markdown-body h3 { font-size: 14px; }
+.msg.assistant .markdown-body p { margin: 0 0 0.65em; }
+.msg.assistant .markdown-body p:last-child { margin-bottom: 0; }
+.msg.assistant .markdown-body ul, .msg.assistant .markdown-body ol { padding-left: 1.4em; margin: 0.4em 0; }
+.msg.assistant .markdown-body li { margin: 0.2em 0; }
+.msg.assistant .markdown-body li > p { margin: 0; }
+.msg.assistant .markdown-body code {
   background: var(--rice-dark); color: var(--ink-light);
   padding: 2px 6px; border-radius: 5px;
   font-family: var(--mono); font-size: 12px;
 }
-.msg.bot .markdown-body pre {
+.msg.assistant .markdown-body pre {
   background: var(--rice-dark); border: 1px solid var(--border);
   border-radius: 10px; padding: 14px; overflow-x: auto; margin: 0.65em 0;
   box-shadow: inset 0 1px 4px rgba(0,0,0,.03);
 }
-.msg.bot .markdown-body pre code {
+.msg.assistant .markdown-body pre code {
   background: none; padding: 0; border-radius: 0;
   font-size: 12px; line-height: 1.6;
 }
-.msg.bot .markdown-body table { border-collapse: collapse; margin: 0.65em 0; font-size: 13px; width: 100%; }
-.msg.bot .markdown-body th, .msg.bot .markdown-body td {
+.msg.assistant .markdown-body table { border-collapse: collapse; margin: 0.65em 0; font-size: 13px; width: 100%; }
+.msg.assistant .markdown-body th, .msg.assistant .markdown-body td {
   border: 1px solid var(--border); padding: 8px 12px; text-align: left;
 }
-.msg.bot .markdown-body th { background: var(--rice-dark); font-weight: 600; font-family: var(--display); }
-.msg.bot .markdown-body blockquote {
+.msg.assistant .markdown-body th { background: var(--rice-dark); font-weight: 600; font-family: var(--display); }
+.msg.assistant .markdown-body blockquote {
   border-left: 3px solid var(--celadon-dim); padding: 6px 14px;
   margin: 0.65em 0; color: var(--ink-muted); background: var(--rice);
   border-radius: 0 8px 8px 0; line-height: 1.6;
 }
-.msg.bot .markdown-body a { color: var(--ink-blue); text-decoration: underline; text-underline-offset: 2px; }
-.msg.bot .markdown-body a:hover { color: var(--ink-blue-hover); }
-.msg.bot .markdown-body hr { border: none; border-top: 1px solid var(--border-light); margin: 1em 0; }
-.msg.bot .markdown-body strong { font-weight: 700; color: var(--ink); }
-.msg.bot .markdown-body img { max-width: 100%; border-radius: 8px; margin: 0.5em 0; }
+.msg.assistant .markdown-body a { color: var(--ink-blue); text-decoration: underline; text-underline-offset: 2px; }
+.msg.assistant .markdown-body a:hover { color: var(--ink-blue-hover); }
+.msg.assistant .markdown-body hr { border: none; border-top: 1px solid var(--border-light); margin: 1em 0; }
+.msg.assistant .markdown-body strong { font-weight: 700; color: var(--ink); }
+.msg.assistant .markdown-body img { max-width: 100%; border-radius: 8px; margin: 0.5em 0; }
 
 /* Tool Call Cards */
 .tool-calls-area { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
