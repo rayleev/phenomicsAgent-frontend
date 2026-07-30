@@ -25,15 +25,36 @@
         <span class="menu-icon">💬</span>
         <span class="menu-label">知识库问答</span>
       </router-link>
-      <router-link
-        to="/imaging"
-        class="menu-item"
-        :class="{ active: route.name === 'Imaging' }"
-        @click="$emit('close-mobile')"
-      >
-        <span class="menu-icon">🛰</span>
-        <span class="menu-label">无人机影像服务</span>
-      </router-link>
+      <div class="menu-group">
+        <div
+          class="menu-item"
+          :class="{ active: route.path.startsWith('/imaging') }"
+          @click="toggleGroup('imaging')"
+        >
+          <span class="menu-icon">🛰</span>
+          <span class="menu-label">无人机影像服务</span>
+          <span class="menu-arrow" v-if="expandedGroups.imaging">▼</span>
+          <span class="menu-arrow" v-else>▶</span>
+        </div>
+        <div class="menu-subgroup" v-if="expandedGroups.imaging">
+          <router-link
+            to="/imaging/map"
+            class="menu-sub-item"
+            :class="{ active: route.path === '/imaging/map' }"
+            @click="$emit('close-mobile')"
+          >
+            <span class="menu-text">卫星地图</span>
+          </router-link>
+          <router-link
+            to="/imaging/fields"
+            class="menu-sub-item"
+            :class="{ active: route.path === '/imaging/fields' }"
+            @click="$emit('close-mobile')"
+          >
+            <span class="menu-text">试验田管理</span>
+          </router-link>
+        </div>
+      </div>
     </div>
 
     <!-- Session list (only on 知识库问答) -->
@@ -112,7 +133,12 @@ defineEmits<{
 }>()
 
 const route = useRoute()
+const expandedGroups = ref<Record<string, boolean>>({ imaging: true })
 const router = useRouter()
+
+function toggleGroup(group: string) {
+  expandedGroups.value[group] = !expandedGroups.value[group]
+}
 const { conversations, currentConvId, loadConversations, deleteConversation, selectConversation, newConversation } = useChat()
 const { user, logout, authHeaders } = useAuth()
 
@@ -292,7 +318,14 @@ function onUserMenuDocClickKey(e: KeyboardEvent) {
 .menu-item:hover { background: var(--rice-dark); color: var(--ink); }
 .menu-item.active { background: var(--celadon-pale); color: var(--celadon); font-weight: 600; }
 .menu-icon { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; }
-.menu-label { overflow: hidden; }
+.menu-label { overflow: hidden; flex: 1; }
+.menu-arrow { font-size: 10px; margin-left: auto; }
+.menu-group { display: flex; flex-direction: column; gap: 2px; }
+.menu-subgroup { display: flex; flex-direction: column; gap: 2px; padding-left: 32px; }
+.menu-sub-item { display: flex; align-items: center; padding: 8px 12px; border-radius: 8px; cursor: pointer; color: var(--ink-muted); transition: all .15s; text-decoration: none; white-space: nowrap; font-size: 13px; }
+.menu-sub-item:hover { background: var(--rice-dark); color: var(--ink); }
+.menu-sub-item.active { background: var(--celadon-pale); color: var(--celadon); font-weight: 600; }
+.menu-text { overflow: hidden; }
 
 /* Sessions */
 .sidebar-sessions {

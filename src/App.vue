@@ -1,10 +1,11 @@
 <template>
-  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'no-sidebar': hideSidebar }">
     <!-- Mobile mask -->
     <div class="sidebar-mask" :class="{ show: mobileSidebarOpen }" @click="mobileSidebarOpen = false"></div>
 
-    <!-- Sidebar -->
+    <!-- Sidebar (hidden on login/register pages) -->
     <AppSidebar
+      v-if="!hideSidebar"
       :collapsed="sidebarCollapsed"
       :mobile-open="mobileSidebarOpen"
       @toggle-collapse="sidebarCollapsed = !sidebarCollapsed"
@@ -19,11 +20,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 
+const route = useRoute()
 const sidebarCollapsed = ref(false)
 const mobileSidebarOpen = ref(false)
+
+const hideSidebar = computed(() => {
+  return route.name === 'Login' || route.name === 'Register'
+})
 
 function toggleMobileSidebar() {
   mobileSidebarOpen.value = !mobileSidebarOpen.value

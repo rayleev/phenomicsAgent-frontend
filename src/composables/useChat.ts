@@ -44,7 +44,7 @@ export interface Message {
 // AppSidebar and ChatView each had their own independent copy, so actions
 // in one (newConversation / selectConversation) were not reflected in the other.
 const conversations = ref<Conversation[]>([])
-const currentConvId = ref<string | null>(null)
+const currentConvId = ref<string | null>(localStorage.getItem('phenomics_current_conv'))
 const messages = ref<Message[]>([])
 const isStreaming = ref(false)
 const streamContent = ref('')
@@ -61,6 +61,12 @@ export function useChat() {
       const r = await fetch(`${API_BASE}/api/conversations`, { headers: authHeaders() })
       if (!r.ok) throw new Error('Failed to load conversations')
       conversations.value = await r.json()
+
+      // 刷新后自动恢复当前对话
+      const savedConvId = localStorage.getItem('phenomics_current_conv')
+      if (savedConvId && currentConvId.value === savedConvId && messages.value.length === 0) {
+        await loadMessages(savedConvId)
+      }
     } catch (e) {
       console.error('loadConversations error:', e)
     }
@@ -138,6 +144,7 @@ export function useChat() {
 
       if (!currentConvId.value) {
         currentConvId.value = convId
+        localStorage.setItem('phenomics_current_conv', convId)
         await loadConversations()
       }
 
@@ -166,6 +173,8 @@ export function useChat() {
       es.addEventListener('tool_call', (e: MessageEvent) => {
         try {
           const d = JSON.parse(e.data)
+          console.log('[useChat] tool_call event:', d)
+          console.log('[useChat] tool_call result keys:', d.result ? Object.keys(d.result) : 'no result')
           const existingIdx = streamToolCalls.value.findIndex(t => t.tool_name === d.tool_name)
           if (existingIdx !== -1) {
             // Update existing tool call
@@ -258,6 +267,7 @@ export function useChat() {
       return
     }
     currentConvId.value = convId
+    localStorage.setItem('phenomics_current_conv', convId)
     await loadMessages(convId)
     // On mobile, close the sidebar after selecting a session (L2).
     window.dispatchEvent(new CustomEvent('phenomics:close-mobile'))
@@ -270,6 +280,7 @@ export function useChat() {
     }
     closeActiveEventSource()
     currentConvId.value = null
+    localStorage.removeItem('phenomics_current_conv')
     messages.value = []
     streamContent.value = ''
     streamThinking.value = ''

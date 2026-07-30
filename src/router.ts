@@ -8,7 +8,23 @@ const routes = [
   { path: '/login', name: 'Login', component: LoginView },
   { path: '/register', name: 'Register', component: RegisterView },
   { path: '/chat', name: 'Chat', component: ChatView, meta: { requiresAuth: true } },
-  { path: '/imaging', name: 'Imaging', component: () => import('./views/ImagingView.vue'), meta: { requiresAuth: true } },
+  { 
+    path: '/imaging', 
+    redirect: '/imaging/map',
+    meta: { requiresAuth: true } 
+  },
+  { 
+    path: '/imaging/map', 
+    name: 'SatelliteMap', 
+    component: () => import('./views/ImagingView.vue'), 
+    meta: { requiresAuth: true } 
+  },
+  { 
+    path: '/imaging/fields', 
+    name: 'FieldManagement', 
+    component: () => import('./views/FieldManagement.vue'), 
+    meta: { requiresAuth: true } 
+  },
   { path: '/:pathMatch(.*)*', redirect: '/chat' },
 ]
 

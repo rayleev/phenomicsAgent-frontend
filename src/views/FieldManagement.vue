@@ -1,0 +1,931 @@
+<template>
+  <div class="field-management">
+    <!-- 顶部工具栏 -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <h2>试验田管理</h2>
+      </div>
+      <div class="toolbar-right">
+        <div class="search-box">
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="搜索..."
+            @input="onSearchInput"
+          />
+        </div>
+        <select v-model="pageSize" @change="onPageSizeChange">
+          <option :value="20">20 条/页</option>
+          <option :value="50">50 条/页</option>
+          <option :value="80">80 条/页</option>
+        </select>
+        <button class="btn-primary" @click="openCreateDialog">+ 新增</button>
+      </div>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="filter-bar">
+      <div class="filter-item">
+        <label>状态：</label>
+        <select v-model="filters.status" @change="applyFilters">
+          <option value="">全部</option>
+          <option value="uploaded">已上传</option>
+          <option value="parsing">解析中</option>
+          <option value="converting">转换中</option>
+          <option value="describing">描述中</option>
+          <option value="embedding">嵌入中</option>
+          <option value="ready">就绪</option>
+          <option value="error">错误</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <label>数据类型：</label>
+        <select v-model="filters.data_type" @change="applyFilters">
+          <option value="">全部</option>
+          <option value="可见光">可见光</option>
+          <option value="多光谱">多光谱</option>
+          <option value="高光谱">高光谱</option>
+          <option value="RGB">RGB</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <label>调查阶段：</label>
+        <input
+          v-model="filters.survey_stage"
+          type="text"
+          placeholder="输入调查阶段"
+          @input="onFilterInput"
+        />
+      </div>
+      <div class="filter-item">
+        <label>任务编号：</label>
+        <input
+          v-model="filters.task_id"
+          type="text"
+          placeholder="输入任务编号"
+          @input="onFilterInput"
+        />
+      </div>
+      <button class="btn-secondary" @click="resetFilters">重置</button>
+    </div>
+
+    <!-- 数据表格 -->
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 80px;">缩略图</th>
+            <th>任务编号</th>
+            <th>试验田分组</th>
+            <th>试验田名称</th>
+            <th>调查阶段</th>
+            <th>数据类型</th>
+            <th>调查员</th>
+            <th>调查时间</th>
+            <th>上传时间</th>
+            <th>状态</th>
+            <th style="width: 150px;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="loading">
+            <td colspan="11" class="loading-cell">加载中...</td>
+          </tr>
+          <tr v-else-if="items.length === 0">
+            <td colspan="11" class="empty-cell">暂无数据</td>
+          </tr>
+          <tr v-for="item in items" :key="item.id">
+            <td class="thumbnail-cell">
+              <img
+                v-if="item.thumbnail_url"
+                :src="item.thumbnail_url"
+                :alt="item.original_filename"
+                class="thumbnail"
+                @error="onImageError"
+              />
+              <div v-else class="thumbnail-placeholder">无图</div>
+            </td>
+            <td>{{ item.task_id }}</td>
+            <td>{{ item.field_group || '-' }}</td>
+            <td>{{ item.field_name || '-' }}</td>
+            <td>{{ item.survey_stage || '-' }}</td>
+            <td>{{ item.data_type || '-' }}</td>
+            <td>{{ item.surveyor || '-' }}</td>
+            <td>{{ formatDate(item.survey_time) }}</td>
+            <td>{{ formatDate(item.upload_time) }}</td>
+            <td>
+              <span class="status-badge" :class="`status-${item.status}`">
+                {{ statusText(item.status) }}
+              </span>
+            </td>
+            <td class="action-cell">
+              <button class="btn-icon" title="查看详情" @click="openDetailDialog(item)">👁</button>
+              <button class="btn-icon" title="编辑" @click="openEditDialog(item)">✏</button>
+              <button class="btn-icon btn-danger" title="删除" @click="onDelete(item)">🗑</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 分页 -->
+    <div class="pagination">
+      <div class="pagination-info">
+        共 {{ total }} 条，第 {{ page }} / {{ totalPages }} 页
+      </div>
+      <div class="pagination-controls">
+        <button :disabled="page <= 1" @click="goToPage(1)">首页</button>
+        <button :disabled="page <= 1" @click="goToPage(page - 1)">上一页</button>
+        <span class="page-number">{{ page }}</span>
+        <button :disabled="page >= totalPages" @click="goToPage(page + 1)">下一页</button>
+        <button :disabled="page >= totalPages" @click="goToPage(totalPages)">末页</button>
+      </div>
+    </div>
+
+    <!-- 新增/编辑弹窗 -->
+    <div v-if="showDialog" class="modal-overlay" @click.self="closeDialog">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>{{ dialogMode === 'create' ? '新增影像' : dialogMode === 'edit' ? '编辑影像' : '影像详情' }}</h3>
+          <button class="btn-close" @click="closeDialog">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-item">
+              <label>任务编号 <span class="required">*</span></label>
+              <input v-model="form.task_id" type="text" :disabled="dialogMode === 'detail'" placeholder="输入任务编号" />
+            </div>
+            <div class="form-item">
+              <label>试验田分组</label>
+              <input v-model="form.field_group" type="text" :disabled="dialogMode === 'detail'" placeholder="输入试验田分组" />
+            </div>
+            <div class="form-item">
+              <label>试验田名称</label>
+              <input v-model="form.field_name" type="text" :disabled="dialogMode === 'detail'" placeholder="输入试验田名称" />
+            </div>
+            <div class="form-item">
+              <label>调查阶段</label>
+              <input v-model="form.survey_stage" type="text" :disabled="dialogMode === 'detail'" placeholder="如：分蘖期、抽穗期" />
+            </div>
+            <div class="form-item">
+              <label>设备型号</label>
+              <input v-model="form.device_model" type="text" :disabled="dialogMode === 'detail'" placeholder="输入设备型号" />
+            </div>
+            <div class="form-item">
+              <label>数据类型</label>
+              <select v-model="form.data_type" :disabled="dialogMode === 'detail'">
+                <option value="">请选择</option>
+                <option value="可见光">可见光</option>
+                <option value="多光谱">多光谱</option>
+                <option value="高光谱">高光谱</option>
+                <option value="RGB">RGB</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label>调查员</label>
+              <input v-model="form.surveyor" type="text" :disabled="dialogMode === 'detail'" placeholder="输入调查员" />
+            </div>
+            <div class="form-item">
+              <label>调查时间</label>
+              <input v-model="form.survey_time" type="datetime-local" :disabled="dialogMode === 'detail'" />
+            </div>
+            <div class="form-item">
+              <label>状态</label>
+              <select v-model="form.status" :disabled="dialogMode === 'detail'">
+                <option value="uploaded">已上传</option>
+                <option value="parsing">解析中</option>
+                <option value="converting">转换中</option>
+                <option value="describing">描述中</option>
+                <option value="embedding">嵌入中</option>
+                <option value="ready">就绪</option>
+                <option value="error">错误</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label>来源</label>
+              <select v-model="form.source" :disabled="dialogMode === 'detail'">
+                <option value="upload">上传</option>
+                <option value="fetch">抓取</option>
+              </select>
+            </div>
+            <div class="form-item form-item-full">
+              <label>错误信息</label>
+              <input v-model="form.error_message" type="text" :disabled="dialogMode === 'detail'" placeholder="输入错误信息" />
+            </div>
+            <div class="form-item form-item-full">
+              <label>VLM 描述</label>
+              <textarea v-model="form.vlm_description" :disabled="dialogMode === 'detail'" placeholder="输入 VLM 描述" rows="3"></textarea>
+            </div>
+            <div class="form-item form-item-full">
+              <label>扩展元数据 (JSON)</label>
+              <textarea v-model="form.extra_metadata" :disabled="dialogMode === 'detail'" placeholder='{"key": "value"}' rows="3"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" v-if="dialogMode !== 'detail'">
+          <button class="btn-secondary" @click="closeDialog">取消</button>
+          <button class="btn-primary" @click="onSubmit" :disabled="submitting">
+            {{ submitting ? '保存中...' : '保存' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, reactive, computed, onMounted } from 'vue'
+
+interface ImageItem {
+  id: string
+  task_id: string
+  field_group: string | null
+  field_name: string | null
+  survey_stage: string | null
+  device_model: string | null
+  data_type: string | null
+  surveyor: string | null
+  survey_time: string | null
+  upload_time: string
+  original_filename: string
+  status: string
+  source: string
+  thumbnail_url: string | null
+  tile_url: string | null
+  error_message: string | null
+  vlm_description: string | null
+  extra_metadata: Record<string, any> | null
+}
+
+const API_BASE = '/api/drone'
+
+const items = ref<ImageItem[]>([])
+const loading = ref(false)
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(20)
+const searchQuery = ref('')
+
+const filters = reactive({
+  status: '',
+  data_type: '',
+  survey_stage: '',
+  task_id: ''
+})
+
+const showDialog = ref(false)
+const dialogMode = ref<'create' | 'edit' | 'detail'>('create')
+const submitting = ref(false)
+const currentId = ref<string | null>(null)
+
+const form = reactive({
+  task_id: '',
+  field_group: '',
+  field_name: '',
+  survey_stage: '',
+  device_model: '',
+  data_type: '',
+  surveyor: '',
+  survey_time: '',
+  status: 'uploaded',
+  source: 'upload',
+  error_message: '',
+  vlm_description: '',
+  extra_metadata: ''
+})
+
+const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
+
+let searchTimeout: ReturnType<typeof setTimeout> | null = null
+let filterTimeout: ReturnType<typeof setTimeout> | null = null
+
+function onSearchInput() {
+  if (searchTimeout) clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => {
+    page.value = 1
+    loadData()
+  }, 300)
+}
+
+function onFilterInput() {
+  if (filterTimeout) clearTimeout(filterTimeout)
+  filterTimeout = setTimeout(() => {
+    page.value = 1
+    loadData()
+  }, 300)
+}
+
+function onPageSizeChange() {
+  page.value = 1
+  loadData()
+}
+
+function applyFilters() {
+  page.value = 1
+  loadData()
+}
+
+function resetFilters() {
+  filters.status = ''
+  filters.data_type = ''
+  filters.survey_stage = ''
+  filters.task_id = ''
+  searchQuery.value = ''
+  page.value = 1
+  loadData()
+}
+
+function goToPage(p: number) {
+  page.value = p
+  loadData()
+}
+
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+function statusText(status: string): string {
+  const map: Record<string, string> = {
+    uploaded: '已上传',
+    parsing: '解析中',
+    converting: '转换中',
+    describing: '描述中',
+    embedding: '嵌入中',
+    ready: '就绪',
+    error: '错误'
+  }
+  return map[status] || status
+}
+
+function onImageError(e: Event) {
+  const target = e.target as HTMLImageElement
+  target.style.display = 'none'
+}
+
+async function loadData() {
+  loading.value = true
+  try {
+    const params = new URLSearchParams()
+    if (searchQuery.value) params.set('search', searchQuery.value)
+    if (filters.status) params.set('status', filters.status)
+    if (filters.data_type) params.set('data_type', filters.data_type)
+    if (filters.survey_stage) params.set('survey_stage', filters.survey_stage)
+    if (filters.task_id) params.set('task_id', filters.task_id)
+    params.set('page', page.value.toString())
+    params.set('page_size', pageSize.value.toString())
+
+    const resp = await fetch(`${API_BASE}/api/images?${params.toString()}`)
+    if (!resp.ok) throw new Error('加载失败')
+    const data = await resp.json()
+    items.value = data.items || []
+    total.value = data.total || 0
+  } catch (e) {
+    console.error('加载数据失败:', e)
+    items.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
+  }
+}
+
+function resetForm() {
+  form.task_id = ''
+  form.field_group = ''
+  form.field_name = ''
+  form.survey_stage = ''
+  form.device_model = ''
+  form.data_type = ''
+  form.surveyor = ''
+  form.survey_time = ''
+  form.status = 'uploaded'
+  form.source = 'upload'
+  form.error_message = ''
+  form.vlm_description = ''
+  form.extra_metadata = ''
+}
+
+function openCreateDialog() {
+  dialogMode.value = 'create'
+  currentId.value = null
+  resetForm()
+  showDialog.value = true
+}
+
+function openEditDialog(item: ImageItem) {
+  dialogMode.value = 'edit'
+  currentId.value = item.id
+  form.task_id = item.task_id
+  form.field_group = item.field_group || ''
+  form.field_name = item.field_name || ''
+  form.survey_stage = item.survey_stage || ''
+  form.device_model = item.device_model || ''
+  form.data_type = item.data_type || ''
+  form.surveyor = item.surveyor || ''
+  form.survey_time = item.survey_time ? item.survey_time.slice(0, 16) : ''
+  form.status = item.status
+  form.source = item.source
+  form.error_message = item.error_message || ''
+  form.vlm_description = item.vlm_description || ''
+  form.extra_metadata = item.extra_metadata ? JSON.stringify(item.extra_metadata, null, 2) : ''
+  showDialog.value = true
+}
+
+function openDetailDialog(item: ImageItem) {
+  dialogMode.value = 'detail'
+  currentId.value = item.id
+  form.task_id = item.task_id
+  form.field_group = item.field_group || ''
+  form.field_name = item.field_name || ''
+  form.survey_stage = item.survey_stage || ''
+  form.device_model = item.device_model || ''
+  form.data_type = item.data_type || ''
+  form.surveyor = item.surveyor || ''
+  form.survey_time = item.survey_time ? item.survey_time.slice(0, 16) : ''
+  form.status = item.status
+  form.source = item.source
+  form.error_message = item.error_message || ''
+  form.vlm_description = item.vlm_description || ''
+  form.extra_metadata = item.extra_metadata ? JSON.stringify(item.extra_metadata, null, 2) : ''
+  showDialog.value = true
+}
+
+function closeDialog() {
+  showDialog.value = false
+  resetForm()
+}
+
+async function onSubmit() {
+  if (!form.task_id.trim()) {
+    alert('请输入任务编号')
+    return
+  }
+
+  submitting.value = true
+  try {
+    const body: Record<string, any> = {
+      task_id: form.task_id,
+      field_group: form.field_group || null,
+      field_name: form.field_name || null,
+      survey_stage: form.survey_stage || null,
+      device_model: form.device_model || null,
+      data_type: form.data_type || null,
+      surveyor: form.surveyor || null,
+      survey_time: form.survey_time || null,
+      status: form.status,
+      source: form.source,
+      error_message: form.error_message || null,
+      vlm_description: form.vlm_description || null,
+      extra_metadata: form.extra_metadata ? JSON.parse(form.extra_metadata) : null
+    }
+
+    let resp: Response
+    if (dialogMode.value === 'create') {
+      resp = await fetch(`${API_BASE}/api/images`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+    } else {
+      resp = await fetch(`${API_BASE}/api/images/${currentId.value}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+    }
+
+    if (!resp.ok) {
+      const err = await resp.json()
+      throw new Error(err.detail || '保存失败')
+    }
+
+    closeDialog()
+    loadData()
+  } catch (e: any) {
+    alert(e.message || '保存失败')
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function onDelete(item: ImageItem) {
+  if (!confirm(`确定删除影像「${item.original_filename}」？`)) return
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/images/${item.id}`, {
+      method: 'DELETE'
+    })
+    if (!resp.ok) throw new Error('删除失败')
+    loadData()
+  } catch (e: any) {
+    alert(e.message || '删除失败')
+  }
+}
+
+onMounted(() => {
+  loadData()
+})
+</script>
+
+<style scoped>
+.field-management {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 20px;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.toolbar-left h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.toolbar-right {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.search-box input {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  width: 200px;
+  outline: none;
+  transition: border-color .15s;
+}
+
+.search-box input:focus {
+  border-color: var(--celadon);
+}
+
+.toolbar-right select {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  background: var(--paper);
+}
+
+.btn-primary {
+  padding: 8px 16px;
+  background: var(--celadon);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.btn-primary:hover {
+  background: var(--celadon-dark);
+}
+
+.btn-primary:disabled {
+  background: var(--border);
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  padding: 8px 16px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.btn-secondary:hover {
+  background: var(--rice);
+}
+
+.filter-bar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--rice);
+  border-radius: 10px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-item label {
+  font-size: 13px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.filter-item input,
+.filter-item select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  background: var(--paper);
+}
+
+.filter-item input:focus,
+.filter-item select:focus {
+  border-color: var(--celadon);
+}
+
+.table-container {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th,
+.data-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-light);
+  white-space: nowrap;
+}
+
+.data-table th {
+  background: var(--rice);
+  font-weight: 600;
+  color: var(--ink);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.data-table tbody tr:hover {
+  background: var(--rice-dark);
+}
+
+.loading-cell,
+.empty-cell {
+  text-align: center;
+  padding: 40px !important;
+  color: var(--ink-muted);
+}
+
+.thumbnail-cell {
+  width: 80px;
+}
+
+.thumbnail {
+  width: 60px;
+  height: 45px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.thumbnail-placeholder {
+  width: 60px;
+  height: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--rice);
+  border-radius: 6px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-uploaded { background: #e3f2fd; color: #1976d2; }
+.status-parsing { background: #fff3e0; color: #f57c00; }
+.status-converting { background: #fff3e0; color: #f57c00; }
+.status-describing { background: #fff3e0; color: #f57c00; }
+.status-embedding { background: #fff3e0; color: #f57c00; }
+.status-ready { background: #e8f5e9; color: #388e3c; }
+.status-error { background: #ffebee; color: #d32f2f; }
+
+.action-cell {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-icon {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background .15s;
+}
+
+.btn-icon:hover {
+  background: var(--rice-dark);
+}
+
+.btn-danger:hover {
+  background: var(--earth-pale);
+}
+
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  flex-shrink: 0;
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.pagination-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pagination-controls button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  background: var(--paper);
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.pagination-controls button:hover:not(:disabled) {
+  background: var(--rice);
+}
+
+.pagination-controls button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.page-number {
+  padding: 6px 12px;
+  background: var(--celadon);
+  color: #fff;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: var(--paper);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 700px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.btn-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--ink-muted);
+  border-radius: 8px;
+}
+
+.btn-close:hover {
+  background: var(--rice);
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.form-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-item-full {
+  grid-column: span 2;
+}
+
+.form-item label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.form-item label .required {
+  color: var(--earth);
+}
+
+.form-item input,
+.form-item select,
+.form-item textarea {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color .15s;
+  font-family: inherit;
+}
+
+.form-item input:focus,
+.form-item select:focus,
+.form-item textarea:focus {
+  border-color: var(--celadon);
+}
+
+.form-item input:disabled,
+.form-item select:disabled,
+.form-item textarea:disabled {
+  background: var(--rice);
+  cursor: not-allowed;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-light);
+}
+</style>
