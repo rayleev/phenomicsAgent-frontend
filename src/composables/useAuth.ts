@@ -46,6 +46,20 @@ export function useAuth() {
     return { 'Authorization': `Bearer ${token.value}` }
   }
 
+  // 解析后端错误响应：优先读 JSON 的 detail，空 body 或解析失败时回退到通用提示。
+  // 避免 r.ok=false 但 body 为空（如代理失败、服务不可达）时 r.json() 抛
+  // "Unexpected end of JSON input" 淹没真实错误。
+  async function _parseError(r: Response, fallback: string): Promise<string> {
+    const text = await r.text()
+    if (!text) return fallback
+    try {
+      const err = JSON.parse(text)
+      return err.detail || fallback
+    } catch {
+      return fallback
+    }
+  }
+
   async function login(username: string, password: string): Promise<void> {
     const r = await fetch('/api/auth/login', {
       method: 'POST',
@@ -53,8 +67,7 @@ export function useAuth() {
       body: JSON.stringify({ username, password }),
     })
     if (!r.ok) {
-      const err = await r.json()
-      throw new Error(err.detail || '登录失败')
+      throw new Error(await _parseError(r, '登录失败'))
     }
     const data = await r.json()
     _saveAuth(data.token, data.user)
@@ -67,8 +80,7 @@ export function useAuth() {
       body: JSON.stringify({ username, password, email }),
     })
     if (!r.ok) {
-      const err = await r.json()
-      throw new Error(err.detail || '注册失败')
+      throw new Error(await _parseError(r, '注册失败'))
     }
     const data = await r.json()
     _saveAuth(data.token, data.user)

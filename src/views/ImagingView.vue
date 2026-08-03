@@ -854,7 +854,7 @@ async function triggerCompletion() {
   console.log('[Completion] description:', completionDescription.value)
 
   try {
-    const response = await fetch('/api/drone/plots/complete', {
+    const response = await fetch('/api/drone/api/plots/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
