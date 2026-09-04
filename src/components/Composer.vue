@@ -539,6 +539,10 @@ function onExample(e: CustomEvent) {
   nextTick(() => {
     autoResize()
     inputEl.value?.focus()
+    // Auto-send after setting text
+    setTimeout(() => {
+      onSend()
+    }, 100)
   })
 }
 </script>

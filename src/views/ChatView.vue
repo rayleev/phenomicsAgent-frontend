@@ -59,7 +59,7 @@
                 <div class="thinking-content">{{ msg.thinking_content }}</div>
               </details>
               <div class="bubble">
-                <div class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
+                <div class="markdown-body" v-html="renderMarkdown(msg.content || defaultSummary(msg.tool_calls))"></div>
               </div>
             </div>
           </template>
@@ -139,6 +139,17 @@ const {
   loadConversations,
   renderMarkdown,
 } = useChat()
+
+function defaultSummary(toolCalls: any[] | null) {
+  if (!toolCalls || toolCalls.length === 0) return ''
+  const summaries: string[] = []
+  for (const tc of toolCalls) {
+    if (tc.status === 'completed') {
+      summaries.push(`已完成 **${tc.tool_name}** 操作。`)
+    }
+  }
+  return summaries.join('')
+}
 
 // ── State ──
 const chatEl = ref<HTMLElement | null>(null)

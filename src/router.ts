@@ -25,6 +25,12 @@ const routes = [
     component: () => import('./views/FieldManagement.vue'), 
     meta: { requiresAuth: true } 
   },
+  { 
+    path: '/imaging/location', 
+    name: 'ImageLocation', 
+    component: () => import('./views/ImageLocationView.vue'), 
+    meta: { requiresAuth: true } 
+  },
   { path: '/:pathMatch(.*)*', redirect: '/chat' },
 ]
 

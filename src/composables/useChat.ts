@@ -77,6 +77,13 @@ export function useChat() {
       const r = await fetch(`${API_BASE}/api/conversations/${convId}/messages`, { headers: authHeaders() })
       if (!r.ok) {
         messages.value = []
+        if (r.status === 404) {
+          console.warn(`[useChat] conversation ${convId} not found, clearing saved state`)
+          if (currentConvId.value === convId) {
+            currentConvId.value = null
+            localStorage.removeItem('phenomics_current_conv')
+          }
+        }
         throw new Error(`HTTP ${r.status}: ${r.statusText}`)
       }
       const data = await r.json()
@@ -108,8 +115,14 @@ export function useChat() {
     }
   }
 
-  async function sendMessage(content: string, thinkingEnabled: boolean = false, enabledServices: string[] = []) {
+  async function sendMessage(content: string, thinkingEnabled: boolean = false, enabledServices: string[] = [], retryCount: number = 0) {
     if (isStreaming.value) return
+
+    if (retryCount > 1) {
+      console.error('sendMessage: max retries exceeded')
+      isStreaming.value = false
+      return
+    }
 
     // Optimistically add user message
     const userMsg: Message = {
@@ -137,7 +150,26 @@ export function useChat() {
           enabled_services: enabledServices,
         }),
       })
-      if (!r.ok) throw new Error(await r.text())
+      if (!r.ok) {
+        const errorText = await r.text()
+        let errorDetail = errorText
+        try {
+          const errorJson = JSON.parse(errorText)
+          errorDetail = errorJson.detail || errorText
+        } catch { /* not JSON, use raw text */ }
+
+        if (r.status === 404 && /conversation.*not found|invalid.*conversation/i.test(errorDetail)) {
+          console.warn(`[useChat] conversation ${currentConvId.value} not found, clearing and retrying`)
+          currentConvId.value = null
+          localStorage.removeItem('phenomics_current_conv')
+          messages.value = messages.value.filter(m => m.id !== userMsg.id)
+          isStreaming.value = false
+          await sendMessage(content, thinkingEnabled, enabledServices, retryCount + 1)
+          return
+        }
+
+        throw new Error(errorDetail)
+      }
       const data = await r.json()
       const sessionId: string = data.session_id
       const convId: string = data.conversation_id

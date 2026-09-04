@@ -129,6 +129,13 @@
               <button class="btn-fullscreen" @click="openFullscreen(modalImage)">
                 🔍 全屏查看
               </button>
+              <button
+                class="btn-satellite"
+                :disabled="!modalImage?.bbox"
+                @click="modalImage?.bbox && goToSatelliteLocation(modalImage)"
+              >
+                🛰️ 查看卫星位置
+              </button>
             </div>
           </div>
         </div>
@@ -161,6 +168,10 @@
               <button class="info-close" @click="closeFullscreen">✕</button>
             </div>
             <div class="fullscreen-map-container" ref="fullscreenMapContainer"></div>
+            <div class="fullscreen-loading" v-if="isLoadingTiles">
+              <div class="loading-spinner"></div>
+              <span>加载影像中...</span>
+            </div>
             <div class="fullscreen-hint" v-if="fullscreenDrawMode !== 'idle'">
               {{ fullscreenDrawMode === 'rect' ? '拖拽绘制矩形，松开完成' : '点击添加顶点，双击或按 Enter 完成' }}
             </div>
@@ -195,7 +206,11 @@
 
         <div class="chat-panel-inner">
           <div class="chat-panel-header">
-            <span>影像助手</span>
+            <div class="chat-header-info">
+              <span class="chat-header-title">影像助手</span>
+              <span v-if="currentConvId" class="chat-header-conv">{{ currentConvTitle }}</span>
+            </div>
+            <button class="btn-new-conv" title="新建对话" @click="onNewConversation">+ 新对话</button>
           </div>
 
           <div class="chat-messages" ref="chatEl">
@@ -208,7 +223,7 @@
             </div>
 
             <div v-for="msg in messages" :key="msg.id" class="chat-msg" :class="msg.role">
-              <div class="chat-msg-content" v-html="renderMd(msg.content)"></div>
+              <div class="chat-msg-content" v-html="renderMd(msg.content || defaultSummary(msg.tool_calls))"></div>
               <div v-if="msg.tool_calls" class="tool-calls">
                 <div v-for="(tc, i) in msg.tool_calls" :key="i" class="tool-call-item">
                   <!-- search_images: 影像卡片 -->
@@ -300,7 +315,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -319,9 +335,10 @@ import { Polygon } from 'ol/geom'
 import { useChat } from '../composables/useChat'
 import Composer from '../components/Composer.vue'
 
+const router = useRouter()
 const {
   messages, isStreaming, streamContent,
-  loadConversations,
+  loadConversations, conversations, currentConvId, newConversation,
 } = useChat()
 
 // ── State ──
@@ -332,6 +349,17 @@ const imageLayers = ref<any[]>([])
 const selectedImage = ref<any>(null)
 const chatPanelWidth = ref(380)
 const isMapReady = ref(false)
+
+// ── Chat helpers ──
+const currentConvTitle = computed(() => {
+  if (!currentConvId.value) return ''
+  const conv = conversations.value.find(c => c.id === currentConvId.value)
+  return conv?.title || ''
+})
+
+function onNewConversation() {
+  newConversation()
+}
 
 // OpenLayers objects
 let map: Map | null = null
@@ -346,10 +374,11 @@ const drawMode = ref<'idle' | 'rect' | 'polygon'>('idle')
 const drawnRegion = ref<{ type: string; coordinates: number[] } | null>(null)
 const plotsResult = ref<any>(null)
 
-// Fullscreen state
+// ── Fullscreen state ──
 const showFullscreen = ref(false)
 const fullscreenImage = ref<any>(null)
 const fullscreenMapContainer = ref<HTMLElement | null>(null)
+const isLoadingTiles = ref(false)
 const fullscreenDrawnRegion = ref<{ type: string; coordinates: number[] } | null>(null)
 const fullscreenDrawMode = ref<'idle' | 'rect' | 'polygon'>('idle')
 const completionDescription = ref('')
@@ -416,22 +445,37 @@ onUnmounted(() => {
 async function initMap() {
   if (!mapContainer.value) return
 
-  // Base layer (Tianditu satellite)
+  // Map source configuration - multiple fallback options
+  const tiandituUrl = `https://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILECOL={x}&TILEROW={y}&TILEMATRIX={z}&tk=${TIANDITU_KEY}`
+  const tiandituAnnoUrl = `https://t0.tianditu.gov.cn/cia_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cia&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILECOL={x}&TILEROW={y}&TILEMATRIX={z}&tk=${TIANDITU_KEY}`
+
+  // Free map sources (no API key required)
+  const osmUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+  const cartoLightUrl = 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'
+  const cartoDarkUrl = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
+  const esriWorldImageryUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+
+  // Determine which map source to use
+  const useTianditu = TIANDITU_KEY && TIANDITU_KEY !== '976ad152f68499029b95bfa5313ac9cc'
+  const baseUrl = useTianditu ? tiandituUrl : esriWorldImageryUrl
+
+  // Base layer
   const baseLayer = new TileLayer({
     source: new XYZ({
-      url: `http://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILECOL={x}&TILEROW={y}&TILEMATRIX={z}&tk=${TIANDITU_KEY}`,
+      url: baseUrl,
       maxZoom: MAP_MAX_ZOOM,
     }),
     zIndex: 0,
   })
 
-  // Annotation layer
+  // Annotation layer (only for Tianditu)
   const annoLayer = new TileLayer({
     source: new XYZ({
-      url: `http://t0.tianditu.gov.cn/cia_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cia&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILECOL={x}&TILEROW={y}&TILEMATRIX={z}&tk=${TIANDITU_KEY}`,
+      url: useTianditu ? tiandituAnnoUrl : cartoLightUrl,
       maxZoom: MAP_MAX_ZOOM,
     }),
     zIndex: 1,
+    opacity: useTianditu ? 1 : 0,
   })
 
   // Drone tile layer (dynamic source, set on search)
@@ -499,6 +543,23 @@ function checkApi() {
 function renderMd(text: string) {
   if (!text) return ''
   return DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
+}
+
+function defaultSummary(toolCalls: any[] | null) {
+  if (!toolCalls || toolCalls.length === 0) return ''
+  const summaries: string[] = []
+  for (const tc of toolCalls) {
+    if (tc.tool_name === 'search_images' && tc.status === 'completed') {
+      const count = tc.result?.results?.length ?? (tc.result ? '若干' : '0')
+      summaries.push(`已为您找到 ${count} 幅影像，结果已展示在地图上。`)
+    } else if (tc.tool_name === 'divide_plots' && tc.status === 'completed') {
+      const count = tc.result?.total ?? (tc.result ? '若干' : '0')
+      summaries.push(`已完成小区划分，共生成 ${count} 个小区。`)
+    } else if (tc.tool_name === 'get_image_detail' && tc.status === 'completed') {
+      summaries.push(`已获取影像详情。`)
+    }
+  }
+  return summaries.join('')
 }
 
 // ── Drawing ──
@@ -616,6 +677,7 @@ function openFullscreen(img: any) {
   console.log('[Fullscreen] img.bbox:', img.bbox)
   fullscreenImage.value = img
   showFullscreen.value = true
+  isLoadingTiles.value = true
   closeImageModal()
   // 使用 setTimeout 确保 DOM 完全渲染
   setTimeout(() => {
@@ -629,23 +691,22 @@ function initFullscreenMap(img: any) {
     return
   }
 
-  console.log('[Fullscreen] container dimensions:', 
-    fullscreenMapContainer.value.clientWidth, 'x', fullscreenMapContainer.value.clientHeight)
-  console.log('[Fullscreen] container element:', fullscreenMapContainer.value)
-
-  console.log('[Fullscreen] img object:', img)
+  console.log('[Fullscreen] === DEBUG START ===')
+  console.log('[Fullscreen] image id:', img.id)
   console.log('[Fullscreen] tile_url:', img.tile_url)
   console.log('[Fullscreen] bbox:', img.bbox)
+  console.log('[Fullscreen] center_lon:', img.center_lon, 'center_lat:', img.center_lat)
 
   // 使用影像的瓦片URL
   const tileUrl = img.tile_url ? toDroneProxyUrl(img.tile_url) : ''
   console.log('[Fullscreen] converted tile URL:', tileUrl)
-  
+
   if (!tileUrl) {
     console.error('[Fullscreen] no tile_url for image:', img.id)
     return
   }
 
+  // 瓦片图层
   const droneLayer = new TileLayer({
     source: new XYZ({
       url: tileUrl,
@@ -654,17 +715,24 @@ function initFullscreenMap(img: any) {
     zIndex: 10,
   })
 
-  // 监听瓦片加载事件
+  // 监听瓦片加载事件 - 详细调试
+  let tileLoadCount = 0
+  let tileErrorCount = 0
   droneLayer.getSource().on('tileloadstart', (e) => {
     console.log('[Fullscreen] tile load start:', e.tile.getTileCoord())
   })
   droneLayer.getSource().on('tileloadend', (e) => {
-    console.log('[Fullscreen] tile load end:', e.tile.getTileCoord())
+    tileLoadCount++
+    console.log('[Fullscreen] tile load end:', e.tile.getTileCoord(), 'count:', tileLoadCount)
+    isLoadingTiles.value = false
   })
   droneLayer.getSource().on('tileloaderror', (e) => {
-    console.error('[Fullscreen] tile load error:', e.tile.getTileCoord(), e)
+    tileErrorCount++
+    console.error('[Fullscreen] tile load error:', e.tile.getTileCoord(), 'count:', tileErrorCount)
+    isLoadingTiles.value = false
   })
 
+  // 绘制图层（用于画小区）
   const drawnLayer = new VectorLayer({
     source: fullscreenDrawnSource,
     style: new Style({
@@ -692,56 +760,102 @@ function initFullscreenMap(img: any) {
     zIndex: 25,
   })
 
-  // 计算影像中心
+  // 使用图片的中心点初始化地图视图
   const bbox = img.bbox
-  const center = bbox
-    ? fromLonLat([(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2])
-    : fromLonLat([109.213, 18.364])
+  const centerLon = (bbox && bbox.length >= 4) ? (bbox[0] + bbox[2]) / 2 : 109.213
+  const centerLat = (bbox && bbox.length >= 4) ? (bbox[1] + bbox[3]) / 2 : 18.364
+
+  // 根据 bbox 大小计算合适的缩放级别
+  let initialZoom = 16
+  if (bbox && bbox.length >= 4) {
+    const lonDiff = Math.abs(bbox[2] - bbox[0])
+    const latDiff = Math.abs(bbox[3] - bbox[1])
+    const maxDiff = Math.max(lonDiff, latDiff)
+    // 根据范围大小调整 zoom：范围越小，zoom 越高
+    if (maxDiff < 0.0001) initialZoom = 22
+    else if (maxDiff < 0.001) initialZoom = 20
+    else if (maxDiff < 0.01) initialZoom = 18
+    else if (maxDiff < 0.1) initialZoom = 16
+    else initialZoom = 14
+    console.log('[Fullscreen] bbox diff:', maxDiff, 'initial zoom:', initialZoom)
+  }
 
   fullscreenMap = new Map({
     target: fullscreenMapContainer.value,
     layers: [droneLayer, boundaryLayer, drawnLayer, plotsLayer],
     view: new View({
-      center,
-      zoom: 18,
+      center: fromLonLat([centerLon, centerLat]),
+      zoom: initialZoom,
       maxZoom: 24,
     }),
   })
 
-  // 缩放到影像范围
-  if (bbox) {
-    const poly = new Polygon([[
-      fromLonLat([bbox[0], bbox[1]]),
-      fromLonLat([bbox[2], bbox[1]]),
-      fromLonLat([bbox[2], bbox[3]]),
-      fromLonLat([bbox[0], bbox[3]]),
-      fromLonLat([bbox[0], bbox[1]]),
-    ]])
-    const extent = poly.getExtent()
-    fullscreenMap.getView().fit(extent, { padding: [40, 40], maxZoom: 20 })
-
-    // 修复：fit 后 center 变为 NaN 的问题（小范围 extent 的精度问题）
-    const centerAfterFit = fullscreenMap.getView().getCenter()
-    if (centerAfterFit && (isNaN(centerAfterFit[0]) || isNaN(centerAfterFit[1]))) {
-      console.warn('[Fullscreen] fit() produced NaN center, manually calculating...')
-      const safeCenter = [
-        (extent[0] + extent[2]) / 2,
-        (extent[1] + extent[3]) / 2,
-      ]
-      fullscreenMap.getView().setCenter(safeCenter)
-      console.log('[Fullscreen] manually set center to:', fullscreenMap.getView().getCenter())
-    }
-  }
+  console.log('[Fullscreen] map created, view center:', fullscreenMap.getView().getCenter(), 'zoom:', fullscreenMap.getView().getZoom())
+  console.log('[Fullscreen] container size:', fullscreenMapContainer.value.clientWidth, 'x', fullscreenMapContainer.value.clientHeight)
 
   setTimeout(() => {
     fullscreenMap?.updateSize()
     fullscreenMap?.render()
-    console.log('[Fullscreen] map size updated and rendered')
-    console.log('[Fullscreen] map view zoom:', fullscreenMap?.getView().getZoom())
-    console.log('[Fullscreen] map view center:', fullscreenMap?.getView().getCenter())
-  }, 500)
+    console.log('[Fullscreen] === AFTER TIMEOUT ===')
+    console.log('[Fullscreen] map zoom:', fullscreenMap?.getView().getZoom())
+    console.log('[Fullscreen] map center:', fullscreenMap?.getView().getCenter())
+    console.log('[Fullscreen] container size after update:', fullscreenMapContainer.value?.clientWidth, 'x', fullscreenMapContainer.value?.clientHeight)
+    console.log('[Fullscreen] tile loads:', tileLoadCount, 'errors:', tileErrorCount)
+    console.log('[Fullscreen] === DEBUG END ===')
+  }, 300)
+}
 
-  console.log('[Fullscreen] map initialized')
+// ── 画小区模式时加载坐标 ──
+function initFullscreenCoordinates() {
+  const img = fullscreenImage.value
+  if (!img || !fullscreenMap) return
+
+  const bbox = img.bbox
+  const isValidBBox = bbox && Array.isArray(bbox) && bbox.length >= 4 &&
+    bbox.every(v => typeof v === 'number' && !isNaN(v) && isFinite(v))
+
+  if (!isValidBBox) {
+    console.warn('[Fullscreen] no valid bbox, skip coordinate init')
+    return
+  }
+
+  // 计算影像中心
+  const center = fromLonLat([(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2])
+  fullscreenMap.getView().setCenter(center)
+
+  // 缩放到影像范围
+  const poly = new Polygon([[
+    fromLonLat([bbox[0], bbox[1]]),
+    fromLonLat([bbox[2], bbox[1]]),
+    fromLonLat([bbox[2], bbox[3]]),
+    fromLonLat([bbox[0], bbox[3]]),
+    fromLonLat([bbox[0], bbox[1]]),
+  ]])
+  const extent = poly.getExtent()
+
+  if (extent.every(v => isFinite(v))) {
+    const lonDiff = Math.abs(bbox[2] - bbox[0])
+    const latDiff = Math.abs(bbox[3] - bbox[1])
+    const minDiff = 0.0001
+
+    if (lonDiff < minDiff || latDiff < minDiff) {
+      // bbox 太小，扩大范围
+      const centerLon = (bbox[0] + bbox[2]) / 2
+      const centerLat = (bbox[1] + bbox[3]) / 2
+      const expandedPoly = new Polygon([[
+        fromLonLat([centerLon - minDiff, centerLat - minDiff]),
+        fromLonLat([centerLon + minDiff, centerLat - minDiff]),
+        fromLonLat([centerLon + minDiff, centerLat + minDiff]),
+        fromLonLat([centerLon - minDiff, centerLat + minDiff]),
+        fromLonLat([centerLon - minDiff, centerLat - minDiff]),
+      ]])
+      fullscreenMap.getView().fit(expandedPoly.getExtent(), { padding: [40, 40], maxZoom: 22 })
+    } else {
+      fullscreenMap.getView().fit(extent, { padding: [40, 40], maxZoom: 20 })
+    }
+  }
+
+  console.log('[Fullscreen] coordinates initialized')
 }
 
 function closeFullscreen() {
@@ -764,8 +878,20 @@ function toggleFullscreenDraw(type: 'rect' | 'polygon') {
     removeFullscreenDrawInteraction()
     return
   }
+  // 进入画小区模式时，先加载坐标
+  if (!isCoordinatesLoaded()) {
+    initFullscreenCoordinates()
+  }
   fullscreenDrawMode.value = type
   addFullscreenDrawInteraction(type)
+}
+
+// 检查是否已加载坐标
+function isCoordinatesLoaded(): boolean {
+  if (!fullscreenMap) return false
+  const center = fullscreenMap.getView().getCenter()
+  // 如果中心点是 [0, 0]，说明还没加载坐标
+  return center && center[0] !== 0 && center[1] !== 0
 }
 
 function addFullscreenDrawInteraction(type: 'rect' | 'polygon') {
@@ -1167,6 +1293,18 @@ function closeImageModal() {
   modalImage.value = null
 }
 
+// ── Navigate to satellite location page ──
+function goToSatelliteLocation(img: any) {
+  if (!img?.bbox) {
+    alert('该影像没有地理坐标信息')
+    return
+  }
+  router.push({
+    path: '/imaging/location',
+    query: { image: JSON.stringify(img) }
+  })
+}
+
 // ── Watch drawn region ──
 watch(drawnRegion, (newRegion) => {
   console.log('[Drawing] drawnRegion changed:', newRegion)
@@ -1304,6 +1442,48 @@ watch(drawnRegion, (newRegion) => {
   display: flex; justify-content: space-between; align-items: center;
   padding: 14px 16px; font-weight: 600; font-size: 15px;
   border-bottom: 1px solid var(--border-light); background: #fff; flex-shrink: 0;
+  gap: 8px;
+}
+
+.chat-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-header-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.chat-header-conv {
+  font-size: 12px;
+  color: var(--ink-muted);
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-new-conv {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--paper);
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+}
+
+.btn-new-conv:hover {
+  background: var(--celadon-pale);
+  color: var(--celadon);
+  border-color: var(--celadon);
 }
 .chat-messages { flex: 1; overflow-y: auto; padding: 16px; }
 .chat-welcome { text-align: center; padding: 40px 20px; color: #888; }
@@ -1533,6 +1713,24 @@ watch(drawnRegion, (newRegion) => {
   background: var(--celadon-dark);
 }
 
+.btn-satellite {
+  padding: 8px 20px;
+  background: #3498db;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all .15s;
+}
+.btn-satellite:hover:not(:disabled) {
+  background: #2980b9;
+}
+.btn-satellite:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Fullscreen modal */
 .fullscreen-modal {
   position: fixed;
@@ -1608,6 +1806,42 @@ watch(drawnRegion, (newRegion) => {
 .fullscreen-map-container {
   flex: 1;
   min-height: 0;
+}
+.fullscreen-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #fff;
+  font-size: 14px;
+  z-index: 100;
+}
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.fullscreen-error {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(231, 76, 60, 0.9);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  z-index: 100;
 }
 .fullscreen-hint {
   position: absolute;

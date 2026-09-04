@@ -23,123 +23,243 @@
       </div>
     </div>
 
-    <!-- 筛选栏 -->
-    <div class="filter-bar">
-      <div class="filter-item">
-        <label>状态：</label>
-        <select v-model="filters.status" @change="applyFilters">
-          <option value="">全部</option>
-          <option value="uploaded">已上传</option>
-          <option value="parsing">解析中</option>
-          <option value="converting">转换中</option>
-          <option value="describing">描述中</option>
-          <option value="embedding">嵌入中</option>
-          <option value="ready">就绪</option>
-          <option value="error">错误</option>
-        </select>
+    <!-- 主内容区域 -->
+    <div class="main-content">
+      <!-- 左侧：筛选栏 + 数据表格 -->
+      <div class="table-section" :style="{ flex: showChatPanel ? '1' : '1', minWidth: '0' }">
+        <!-- 筛选栏 -->
+        <div class="filter-bar" v-if="!showChatPanel || true">
+          <div class="filter-item">
+            <label>状态：</label>
+            <select v-model="filters.status" @change="applyFilters">
+              <option value="">全部</option>
+              <option value="uploaded">已上传</option>
+              <option value="parsing">解析中</option>
+              <option value="converting">转换中</option>
+              <option value="describing">描述中</option>
+              <option value="embedding">嵌入中</option>
+              <option value="ready">就绪</option>
+              <option value="error">错误</option>
+            </select>
+          </div>
+          <div class="filter-item">
+            <label>数据类型：</label>
+            <select v-model="filters.data_type" @change="applyFilters">
+              <option value="">全部</option>
+              <option value="可见光">可见光</option>
+              <option value="多光谱">多光谱</option>
+              <option value="高光谱">高光谱</option>
+              <option value="RGB">RGB</option>
+            </select>
+          </div>
+          <div class="filter-item">
+            <label>调查阶段：</label>
+            <input
+              v-model="filters.survey_stage"
+              type="text"
+              placeholder="输入调查阶段"
+              @input="onFilterInput"
+            />
+          </div>
+          <div class="filter-item">
+            <label>任务编号：</label>
+            <input
+              v-model="filters.task_id"
+              type="text"
+              placeholder="输入任务编号"
+              @input="onFilterInput"
+            />
+          </div>
+          <button class="btn-secondary" @click="resetFilters">重置</button>
+        </div>
+
+        <!-- 欢迎屏幕（未发送消息时显示） -->
+        <div v-if="!showChatPanel" class="welcome-screen">
+          <div class="welcome-content">
+            <div class="welcome-icon">🌾</div>
+            <h2 class="welcome-title">试验田数据助手</h2>
+            <p class="welcome-subtitle">我可以帮你查询、管理试验田数据，直接提问或点击下方示例开始</p>
+            <div class="welcome-chips">
+              <span class="welcome-chip primary" @click="sendExample('查看武汉水稻抗旱试验基地的数据')">查看武汉水稻抗旱试验基地的数据</span>
+              <span class="welcome-chip primary" @click="sendExample('查看测试田块2的数据')">查看测试田块2的数据</span>
+              <span class="welcome-chip" @click="sendExample('显示所有就绪状态的影像')">显示所有就绪状态的影像</span>
+              <span class="welcome-chip" @click="sendExample('帮我创建一个新记录')">帮我创建一个新记录</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 数据表格（有搜索结果时显示） -->
+        <div v-else class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 80px;">缩略图</th>
+                <th>任务编号</th>
+                <th>试验田分组</th>
+                <th>试验田名称</th>
+                <th>调查阶段</th>
+                <th>数据类型</th>
+                <th>调查员</th>
+                <th>调查时间</th>
+                <th>上传时间</th>
+                <th>状态</th>
+                <th style="width: 150px;">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="loading">
+                <td colspan="11" class="loading-cell">加载中...</td>
+              </tr>
+              <tr v-else-if="displayItems.length === 0">
+                <td colspan="11" class="empty-cell">暂无数据</td>
+              </tr>
+              <tr v-for="item in displayItems" :key="item.id">
+                <td class="thumbnail-cell">
+                  <img
+                    v-if="item.thumbnail_url"
+                    :src="item.thumbnail_url"
+                    :alt="item.original_filename"
+                    class="thumbnail"
+                    @error="onImageError"
+                    @click="previewImage = item"
+                  />
+                  <div v-else class="thumbnail-placeholder">无图</div>
+                </td>
+                <td>{{ item.task_id }}</td>
+                <td>{{ item.field_group || '-' }}</td>
+                <td>{{ item.field_name || '-' }}</td>
+                <td>{{ item.survey_stage || '-' }}</td>
+                <td>{{ item.data_type || '-' }}</td>
+                <td>{{ item.surveyor || '-' }}</td>
+                <td>{{ formatDate(item.survey_time) }}</td>
+                <td>{{ formatDate(item.upload_time) }}</td>
+                <td>
+                  <span class="status-badge" :class="`status-${item.status}`">
+                    {{ statusText(item.status) }}
+                  </span>
+                </td>
+                <td class="action-cell">
+                  <button class="btn-icon" title="查看详情" @click="openDetailDialog(item)">👁</button>
+                  <button class="btn-icon" title="编辑" @click="openEditDialog(item)">✏</button>
+                  <button class="btn-icon btn-danger" title="删除" @click="onDelete(item)">🗑</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 分页 -->
+        <div class="pagination" v-if="showChatPanel && !usingSearchResults">
+          <div class="pagination-info">
+            共 {{ total }} 条，第 {{ page }} / {{ totalPages }} 页
+          </div>
+          <div class="pagination-controls">
+            <button :disabled="page <= 1" @click="goToPage(1)">首页</button>
+            <button :disabled="page <= 1" @click="goToPage(page - 1)">上一页</button>
+            <span class="page-number">{{ page }}</span>
+            <button :disabled="page >= totalPages" @click="goToPage(page + 1)">下一页</button>
+            <button :disabled="page >= totalPages" @click="goToPage(totalPages)">末页</button>
+          </div>
+        </div>
       </div>
-      <div class="filter-item">
-        <label>数据类型：</label>
-        <select v-model="filters.data_type" @change="applyFilters">
-          <option value="">全部</option>
-          <option value="可见光">可见光</option>
-          <option value="多光谱">多光谱</option>
-          <option value="高光谱">高光谱</option>
-          <option value="RGB">RGB</option>
-        </select>
+
+      <!-- 右侧：聊天面板 -->
+      <div v-if="showChatPanel" class="chat-panel" :style="{ width: chatPanelWidth + 'px', minWidth: chatPanelWidth + 'px' }">
+        <!-- Drag handle on left edge -->
+        <div
+          class="chat-panel-drag-handle"
+          @mousedown="startDrag"
+          title="拖拽调整宽度"
+        ></div>
+
+        <div class="chat-panel-inner">
+          <div class="chat-panel-header">
+            <div class="chat-header-info">
+              <span class="chat-header-title">试验田助手</span>
+              <span v-if="currentConvId" class="chat-header-conv">{{ currentConvTitle }}</span>
+            </div>
+            <button class="btn-new-conv" title="新建对话" @click="onNewConversation">+ 新对话</button>
+          </div>
+
+          <div class="chat-messages" ref="chatEl">
+            <div v-for="msg in messages" :key="msg.id" class="chat-msg" :class="msg.role">
+              <div class="chat-msg-content" v-html="renderMd(msg.content || defaultSummary(msg.tool_calls))"></div>
+              <div v-if="msg.tool_calls" class="tool-calls">
+                <div v-for="(tc, i) in msg.tool_calls" :key="i" class="tool-call-item">
+                  <!-- search_fields: 结果摘要 -->
+                  <div v-if="tc.tool_name === 'search_fields' && tc.status === 'completed'" class="tool-result-summary">
+                    <span class="tool-label">🔍 试验田检索</span>
+                    <span class="result-count" v-if="tc.result?.items">找到 {{ tc.result.items.length }} 条记录</span>
+                    <span class="result-count" v-else-if="tc.result">已查询</span>
+                  </div>
+
+                  <!-- create_field: 创建结果 -->
+                  <div v-else-if="tc.tool_name === 'create_field' && tc.status === 'completed'" class="tool-result-message success">
+                    <span class="tool-label">✅ 创建成功</span>
+                    <span v-if="tc.result?.field_name">{{ tc.result.field_name }}</span>
+                    <span v-else>记录已创建</span>
+                  </div>
+                  <div v-else-if="tc.tool_name === 'create_field' && tc.status === 'error'" class="tool-result-message error">
+                    <span class="tool-label">❌ 创建失败</span>
+                    <span>{{ tc.error || '未知错误' }}</span>
+                  </div>
+
+                  <!-- update_field: 更新结果 -->
+                  <div v-else-if="tc.tool_name === 'update_field' && tc.status === 'completed'" class="tool-result-message success">
+                    <span class="tool-label">✅ 更新成功</span>
+                    <span v-if="tc.result?.field_name">{{ tc.result.field_name }}</span>
+                    <span v-else>记录已更新</span>
+                  </div>
+                  <div v-else-if="tc.tool_name === 'update_field' && tc.status === 'error'" class="tool-result-message error">
+                    <span class="tool-label">❌ 更新失败</span>
+                    <span>{{ tc.error || '未知错误' }}</span>
+                  </div>
+
+                  <!-- delete_field: 删除结果 -->
+                  <div v-else-if="tc.tool_name === 'delete_field' && tc.status === 'completed'" class="tool-result-message success">
+                    <span class="tool-label">✅ 删除成功</span>
+                    <span>记录已删除</span>
+                  </div>
+                  <div v-else-if="tc.tool_name === 'delete_field' && tc.status === 'error'" class="tool-result-message error">
+                    <span class="tool-label">❌ 删除失败</span>
+                    <span>{{ tc.error || '未知错误' }}</span>
+                  </div>
+
+                  <!-- 其他工具: 默认状态显示 -->
+                  <div v-else class="tool-card" :class="tc.status">
+                    <span class="tool-name">{{ tc.tool_name }}</span>
+                    <span class="tool-status">{{ tc.status === 'completed' ? '✓' : tc.status === 'error' ? '✗' : '…' }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="isStreaming" class="chat-msg assistant">
+              <div class="chat-msg-content" v-html="renderMd(streamContent || '...')"></div>
+            </div>
+          </div>
+
+          <!-- Composer -->
+          <Composer
+            placeholder="询问试验田数据，或描述如何管理记录… (Enter 发送，Shift+Enter 换行)"
+            :show-thinking="false"
+            :show-services="false"
+            :fixed-services="['search_fields', 'create_field', 'update_field', 'delete_field']"
+            @send="onComposerSend"
+          />
+        </div>
       </div>
-      <div class="filter-item">
-        <label>调查阶段：</label>
-        <input
-          v-model="filters.survey_stage"
-          type="text"
-          placeholder="输入调查阶段"
-          @input="onFilterInput"
-        />
-      </div>
-      <div class="filter-item">
-        <label>任务编号：</label>
-        <input
-          v-model="filters.task_id"
-          type="text"
-          placeholder="输入任务编号"
-          @input="onFilterInput"
-        />
-      </div>
-      <button class="btn-secondary" @click="resetFilters">重置</button>
     </div>
 
-    <!-- 数据表格 -->
-    <div class="table-container">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th style="width: 80px;">缩略图</th>
-            <th>任务编号</th>
-            <th>试验田分组</th>
-            <th>试验田名称</th>
-            <th>调查阶段</th>
-            <th>数据类型</th>
-            <th>调查员</th>
-            <th>调查时间</th>
-            <th>上传时间</th>
-            <th>状态</th>
-            <th style="width: 150px;">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="11" class="loading-cell">加载中...</td>
-          </tr>
-          <tr v-else-if="items.length === 0">
-            <td colspan="11" class="empty-cell">暂无数据</td>
-          </tr>
-          <tr v-for="item in items" :key="item.id">
-            <td class="thumbnail-cell">
-              <img
-                v-if="item.thumbnail_url"
-                :src="item.thumbnail_url"
-                :alt="item.original_filename"
-                class="thumbnail"
-                @error="onImageError"
-              />
-              <div v-else class="thumbnail-placeholder">无图</div>
-            </td>
-            <td>{{ item.task_id }}</td>
-            <td>{{ item.field_group || '-' }}</td>
-            <td>{{ item.field_name || '-' }}</td>
-            <td>{{ item.survey_stage || '-' }}</td>
-            <td>{{ item.data_type || '-' }}</td>
-            <td>{{ item.surveyor || '-' }}</td>
-            <td>{{ formatDate(item.survey_time) }}</td>
-            <td>{{ formatDate(item.upload_time) }}</td>
-            <td>
-              <span class="status-badge" :class="`status-${item.status}`">
-                {{ statusText(item.status) }}
-              </span>
-            </td>
-            <td class="action-cell">
-              <button class="btn-icon" title="查看详情" @click="openDetailDialog(item)">👁</button>
-              <button class="btn-icon" title="编辑" @click="openEditDialog(item)">✏</button>
-              <button class="btn-icon btn-danger" title="删除" @click="onDelete(item)">🗑</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- 分页 -->
-    <div class="pagination">
-      <div class="pagination-info">
-        共 {{ total }} 条，第 {{ page }} / {{ totalPages }} 页
-      </div>
-      <div class="pagination-controls">
-        <button :disabled="page <= 1" @click="goToPage(1)">首页</button>
-        <button :disabled="page <= 1" @click="goToPage(page - 1)">上一页</button>
-        <span class="page-number">{{ page }}</span>
-        <button :disabled="page >= totalPages" @click="goToPage(page + 1)">下一页</button>
-        <button :disabled="page >= totalPages" @click="goToPage(totalPages)">末页</button>
-      </div>
+    <!-- 底部 Composer（未发送消息时显示） -->
+    <div v-if="!showChatPanel" class="bottom-composer">
+      <Composer
+        placeholder="询问试验田数据，或描述如何管理记录… (Enter 发送，Shift+Enter 换行)"
+        :show-thinking="false"
+        :show-services="false"
+        :fixed-services="['search_fields', 'create_field', 'update_field', 'delete_field']"
+        @send="onComposerSend"
+      />
     </div>
 
     <!-- 新增/编辑弹窗 -->
@@ -230,11 +350,39 @@
         </div>
       </div>
     </div>
+
+    <!-- 图片预览弹窗 -->
+    <div v-if="previewImage" class="modal-overlay" @click.self="previewImage = null">
+      <div class="modal modal-preview">
+        <div class="modal-header">
+          <h3>{{ previewImage.original_filename }}</h3>
+          <button class="btn-close" @click="previewImage = null">×</button>
+        </div>
+        <div class="modal-body modal-body-preview">
+          <img
+            v-if="previewImage.thumbnail_url"
+            :src="previewImage.thumbnail_url"
+            :alt="previewImage.original_filename"
+            class="preview-image"
+          />
+          <div class="preview-info">
+            <p><strong>任务编号:</strong> {{ previewImage.task_id }}</p>
+            <p><strong>试验田名称:</strong> {{ previewImage.field_name || '-' }}</p>
+            <p><strong>数据类型:</strong> {{ previewImage.data_type || '-' }}</p>
+            <p><strong>状态:</strong> {{ previewImage.status }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+import { useChat } from '../composables/useChat'
+import Composer from '../components/Composer.vue'
 
 interface ImageItem {
   id: string
@@ -259,6 +407,63 @@ interface ImageItem {
 
 const API_BASE = '/api/drone'
 
+// ── Chat state ──
+const {
+  messages,
+  isStreaming,
+  streamContent,
+  loadConversations,
+  conversations,
+  currentConvId,
+  newConversation,
+} = useChat()
+
+const showChatPanel = ref(false)
+const searchResults = ref<ImageItem[] | null>(null)
+const chatPanelWidth = ref(380)
+const chatEl = ref<HTMLElement | null>(null)
+const previewImage = ref<ImageItem | null>(null)
+
+// ── Chat helpers ──
+const currentConvTitle = computed(() => {
+  if (!currentConvId.value) return ''
+  const conv = conversations.value.find(c => c.id === currentConvId.value)
+  return conv?.title || ''
+})
+
+function onNewConversation() {
+  newConversation()
+  showChatPanel.value = true
+}
+
+// ── Drag to resize chat panel ──
+let dragging = false
+let dragStartX = 0
+let dragStartWidth = 0
+
+function startDrag(e: MouseEvent) {
+  dragging = true
+  dragStartX = e.clientX
+  dragStartWidth = chatPanelWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  e.preventDefault()
+}
+
+function onDragMove(e: MouseEvent) {
+  if (!dragging) return
+  const delta = dragStartX - e.clientX
+  const newWidth = Math.min(720, Math.max(280, dragStartWidth + delta))
+  chatPanelWidth.value = newWidth
+}
+
+function onDragEnd() {
+  dragging = false
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+}
+
+// ── Existing table state ──
 const items = ref<ImageItem[]>([])
 const loading = ref(false)
 const total = ref(0)
@@ -295,6 +500,15 @@ const form = reactive({
 })
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
+
+const usingSearchResults = computed(() => searchResults.value !== null)
+
+const displayItems = computed(() => {
+  if (searchResults.value !== null) {
+    return searchResults.value
+  }
+  return items.value
+})
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
 let filterTimeout: ReturnType<typeof setTimeout> | null = null
@@ -368,6 +582,29 @@ function statusText(status: string): string {
 function onImageError(e: Event) {
   const target = e.target as HTMLImageElement
   target.style.display = 'none'
+}
+
+function renderMd(text: string) {
+  if (!text) return ''
+  return DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
+}
+
+function defaultSummary(toolCalls: any[] | null) {
+  if (!toolCalls || toolCalls.length === 0) return ''
+  const summaries: string[] = []
+  for (const tc of toolCalls) {
+    if (tc.tool_name === 'search_fields' && tc.status === 'completed') {
+      const count = tc.result?.items?.length ?? (tc.result ? '若干' : '0')
+      summaries.push(`已为您找到 ${count} 条试验田记录，结果已展示在表格中。`)
+    } else if (tc.tool_name === 'create_field' && tc.status === 'completed') {
+      summaries.push(`✅ 试验田记录创建成功${tc.result?. field_name ? '：' + tc.result.field_name : ''}。`)
+    } else if (tc.tool_name === 'update_field' && tc.status === 'completed') {
+      summaries.push(`✅ 试验田记录更新成功${tc.result?.field_name ? '：' + tc.result.field_name : ''}。`)
+    } else if (tc.tool_name === 'delete_field' && tc.status === 'completed') {
+      summaries.push(`✅ 试验田记录已删除。`)
+    }
+  }
+  return summaries.join('')
 }
 
 async function loadData() {
@@ -529,8 +766,71 @@ async function onDelete(item: ImageItem) {
   }
 }
 
+// ── Chat functions ──
+function onComposerSend(text: string) {
+  if (!showChatPanel.value) {
+    showChatPanel.value = true
+  }
+}
+
+function sendExample(text: string) {
+  if (!showChatPanel.value) {
+    showChatPanel.value = true
+  }
+  // Dispatch event for Composer to pick up
+  nextTick(() => {
+    window.dispatchEvent(new CustomEvent('phenomics:example', { detail: text }))
+  })
+}
+
+// Watch messages for tool calls
+watch(messages, (msgs) => {
+  for (const msg of msgs) {
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        if (tc.tool_name === 'search_fields' && tc.status === 'completed' && tc.result) {
+          // Update search results for the table
+          if (tc.result.items && Array.isArray(tc.result.items)) {
+            searchResults.value = tc.result.items
+          } else if (tc.result.results && Array.isArray(tc.result.results)) {
+            searchResults.value = tc.result.results
+          }
+        }
+
+        // After create/update/delete, refresh the table data
+        if ((tc.tool_name === 'create_field' || tc.tool_name === 'update_field' || tc.tool_name === 'delete_field') && tc.status === 'completed') {
+          loadData()
+        }
+      }
+    }
+  }
+  // Auto-scroll chat to bottom
+  nextTick(() => {
+    if (chatEl.value) {
+      chatEl.value.scrollTop = chatEl.value.scrollHeight
+    }
+  })
+}, { deep: true })
+
+// Watch streaming content to auto-scroll
+watch(streamContent, () => {
+  nextTick(() => {
+    if (chatEl.value) {
+      chatEl.value.scrollTop = chatEl.value.scrollHeight
+    }
+  })
+})
+
 onMounted(() => {
   loadData()
+  loadConversations()
+  document.addEventListener('mousemove', onDragMove)
+  document.addEventListener('mouseup', onDragEnd)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
 })
 </script>
 
@@ -623,6 +923,23 @@ onMounted(() => {
   background: var(--rice);
 }
 
+/* Main content area */
+.main-content {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.table-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Filter bar */
 .filter-bar {
   display: flex;
   gap: 16px;
@@ -662,6 +979,98 @@ onMounted(() => {
   border-color: var(--celadon);
 }
 
+/* Welcome screen */
+.welcome-screen {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: linear-gradient(135deg, var(--rice) 0%, var(--paper) 100%);
+}
+
+.welcome-content {
+  text-align: center;
+  max-width: 600px;
+  animation: fadeInUp .5s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.welcome-icon {
+  font-size: 56px;
+  margin-bottom: 16px;
+  animation: bounce 2s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.welcome-title {
+  font-family: var(--display);
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+
+.welcome-subtitle {
+  font-size: 16px;
+  color: var(--ink-muted);
+  margin-bottom: 32px;
+  line-height: 1.6;
+}
+
+.welcome-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.welcome-chip {
+  padding: 12px 20px;
+  background: var(--paper);
+  border-radius: 24px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  transition: all .2s ease;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
+}
+
+.welcome-chip:hover {
+  border-color: var(--celadon);
+  box-shadow: 0 4px 16px rgba(136, 184, 147, .2);
+  transform: translateY(-2px);
+}
+
+.welcome-chip.primary {
+  background: var(--celadon);
+  color: #fff;
+  border-color: var(--celadon);
+  box-shadow: 0 4px 16px rgba(136, 184, 147, .3);
+}
+
+.welcome-chip.primary:hover {
+  background: var(--celadon-dark);
+  box-shadow: 0 6px 20px rgba(136, 184, 147, .4);
+}
+
+/* Table */
 .table-container {
   flex: 1;
   overflow: auto;
@@ -713,6 +1122,46 @@ onMounted(() => {
   object-fit: cover;
   border-radius: 6px;
   border: 1px solid var(--border);
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s;
+}
+
+.thumbnail:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
+}
+
+.modal-preview {
+  max-width: 800px;
+  width: 90%;
+}
+
+.modal-body-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.preview-info {
+  text-align: left;
+  width: 100%;
+  padding: 16px;
+  background: var(--rice);
+  border-radius: 8px;
+}
+
+.preview-info p {
+  margin: 8px 0;
+  font-size: 14px;
+  color: var(--ink);
 }
 
 .thumbnail-placeholder {
@@ -767,6 +1216,7 @@ onMounted(() => {
   background: var(--earth-pale);
 }
 
+/* Pagination */
 .pagination {
   display: flex;
   justify-content: space-between;
@@ -811,6 +1261,208 @@ onMounted(() => {
   color: #fff;
   border-radius: 6px;
   font-weight: 600;
+}
+
+/* Bottom composer (initial state) */
+.bottom-composer {
+  flex-shrink: 0;
+  padding: 12px 0 0;
+  background: transparent;
+}
+
+/* Chat panel */
+.chat-panel {
+  display: flex;
+  height: 100%;
+  background: #fafafa;
+  border-left: 1px solid var(--border-light);
+  position: relative;
+  border-radius: 10px 0 0 10px;
+}
+
+.chat-panel-drag-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 10;
+  transition: background .15s;
+}
+
+.chat-panel-drag-handle:hover,
+.chat-panel-drag-handle:active {
+  background: var(--celadon);
+  opacity: 0.5;
+}
+
+.chat-panel-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-left: 6px;
+}
+
+.chat-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  font-weight: 600;
+  font-size: 15px;
+  border-bottom: 1px solid var(--border-light);
+  gap: 8px;
+}
+
+.chat-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-header-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.chat-header-conv {
+  font-size: 12px;
+  color: var(--ink-muted);
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-new-conv {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--paper);
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+}
+
+.btn-new-conv:hover {
+  background: var(--celadon-pale);
+  color: var(--celadon);
+  border-color: var(--celadon);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.chat-msg {
+  margin-bottom: 14px;
+}
+
+.chat-msg.user .chat-msg-content {
+  background: var(--celadon);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 12px 12px 2px 12px;
+  display: inline-block;
+  max-width: 90%;
+  font-size: 14px;
+}
+
+.chat-msg.assistant .chat-msg-content {
+  background: #fff;
+  padding: 10px 14px;
+  border-radius: 12px 12px 12px 2px;
+  border: 1px solid var(--border-light);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.tool-calls {
+  margin-top: 8px;
+}
+
+.tool-call-item {
+  margin-bottom: 8px;
+}
+
+.tool-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: #f5f5f5;
+  border-radius: 12px;
+  font-size: 12px;
+  margin-right: 6px;
+}
+
+.tool-card.completed {
+  background: #e8f5e9;
+}
+
+.tool-card.error {
+  background: #fce4ec;
+}
+
+.tool-result-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-radius: 10px;
+  border: 1px solid var(--border-light);
+  font-size: 13px;
+}
+
+.tool-result-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.tool-result-message.success {
+  background: #e8f5e9;
+  border: 1px solid #c8e6c9;
+  color: #2e7d32;
+}
+
+.tool-result-message.error {
+  background: #fce4ec;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+}
+
+.tool-label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.result-count {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+/* Make the shared Composer fit the narrow panel */
+.chat-panel-inner :deep(.composer-wrap) {
+  padding: 10px 12px 12px;
+}
+
+.chat-panel-inner :deep(.composer) {
+  max-width: none;
 }
 
 /* Modal */
@@ -927,5 +1579,45 @@ onMounted(() => {
   gap: 12px;
   padding: 16px 20px;
   border-top: 1px solid var(--border-light);
+}
+
+@media (max-width: 768px) {
+  .chat-panel {
+    width: 300px !important;
+    min-width: 300px !important;
+  }
+
+  .chat-panel-drag-handle {
+    display: none;
+  }
+
+  .welcome-screen {
+    padding: 24px 16px;
+  }
+
+  .welcome-icon {
+    font-size: 40px;
+  }
+
+  .welcome-title {
+    font-size: 24px;
+  }
+
+  .welcome-subtitle {
+    font-size: 14px;
+  }
+
+  .welcome-chips {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .welcome-chip {
+    width: 100%;
+    text-align: center;
+    padding: 10px 16px;
+    font-size: 13px;
+  }
 }
 </style>
