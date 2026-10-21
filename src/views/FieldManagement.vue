@@ -121,7 +121,7 @@
                     :alt="item.original_filename"
                     class="thumbnail"
                     @error="onImageError"
-                    @click="previewImage = item"
+                    @click="openPreview(item)"
                   />
                   <div v-else class="thumbnail-placeholder">无图</div>
                 </td>
@@ -351,29 +351,13 @@
       </div>
     </div>
 
-    <!-- 图片预览弹窗 -->
-    <div v-if="previewImage" class="modal-overlay" @click.self="previewImage = null">
-      <div class="modal modal-preview">
-        <div class="modal-header">
-          <h3>{{ previewImage.original_filename }}</h3>
-          <button class="btn-close" @click="previewImage = null">×</button>
-        </div>
-        <div class="modal-body modal-body-preview">
-          <img
-            v-if="previewImage.thumbnail_url"
-            :src="previewImage.thumbnail_url"
-            :alt="previewImage.original_filename"
-            class="preview-image"
-          />
-          <div class="preview-info">
-            <p><strong>任务编号:</strong> {{ previewImage.task_id }}</p>
-            <p><strong>试验田名称:</strong> {{ previewImage.field_name || '-' }}</p>
-            <p><strong>数据类型:</strong> {{ previewImage.data_type || '-' }}</p>
-            <p><strong>状态:</strong> {{ previewImage.status }}</p>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- 原图预览弹窗（可缩放 + 查看整块田 + 跳转 field-shape-web） -->
+    <ImagePreviewModal
+      :visible="previewVisible"
+      :image="previewImage"
+      :mosaic="previewMosaic"
+      @close="previewVisible = false"
+    />
   </div>
 </template>
 
@@ -383,6 +367,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { useChat } from '../composables/useChat'
 import Composer from '../components/Composer.vue'
+import ImagePreviewModal from '../components/ImagePreviewModal.vue'
 
 interface ImageItem {
   id: string
@@ -422,7 +407,35 @@ const showChatPanel = ref(false)
 const searchResults = ref<ImageItem[] | null>(null)
 const chatPanelWidth = ref(380)
 const chatEl = ref<HTMLElement | null>(null)
+const previewVisible = ref(false)
 const previewImage = ref<ImageItem | null>(null)
+const previewMosaic = ref<any | null>(null)
+
+async function openPreview(item: ImageItem) {
+  previewImage.value = item
+  previewMosaic.value = null
+  previewVisible.value = true
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/images/${item.id}`)
+    if (!resp.ok) return
+    const detail = await resp.json()
+    previewImage.value = { ...item, ...detail }
+
+    if (!detail.mission_id) return
+    const params = new URLSearchParams({
+      mosaic_type: 'mission',
+      mission_id: String(detail.mission_id),
+      page_size: '1',
+    })
+    const mr = await fetch(`${API_BASE}/api/mosaics?${params.toString()}`)
+    if (!mr.ok) return
+    const md = await mr.json()
+    if (md.items?.length) previewMosaic.value = md.items[0]
+  } catch (e) {
+    console.error('加载预览信息失败:', e)
+  }
+}
 
 // ── Chat helpers ──
 const currentConvTitle = computed(() => {
@@ -1129,39 +1142,6 @@ onUnmounted(() => {
 .thumbnail:hover {
   transform: scale(1.1);
   box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
-}
-
-.modal-preview {
-  max-width: 800px;
-  width: 90%;
-}
-
-.modal-body-preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.preview-image {
-  max-width: 100%;
-  max-height: 60vh;
-  object-fit: contain;
-  border-radius: 8px;
-}
-
-.preview-info {
-  text-align: left;
-  width: 100%;
-  padding: 16px;
-  background: var(--rice);
-  border-radius: 8px;
-}
-
-.preview-info p {
-  margin: 8px 0;
-  font-size: 14px;
-  color: var(--ink);
 }
 
 .thumbnail-placeholder {

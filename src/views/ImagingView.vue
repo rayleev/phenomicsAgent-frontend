@@ -306,7 +306,7 @@
             placeholder="描述你想查看的影像，或描述如何划分区域… (Enter 发送，Shift+Enter 换行)"
             :show-thinking="false"
             :show-services="false"
-            :fixed-services="['search_images', 'get_image_detail']"
+            :fixed-services="['get_image_detail']"
           />
         </div>
       </div>
