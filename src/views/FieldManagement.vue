@@ -345,11 +345,14 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { useChat } from '../composables/useChat'
 import Composer from '../components/Composer.vue'
 import ImagePreviewModal from '../components/ImagePreviewModal.vue'
+
+const router = useRouter()
 
 interface ImageItem {
   id: string
