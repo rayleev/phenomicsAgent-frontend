@@ -401,12 +401,15 @@ onMounted(async () => {
   document.addEventListener('mousemove', onDragMove)
   document.addEventListener('mouseup', onDragEnd)
 
-  if (imageData.value?.bbox) {
-    showImageBBox(imageData.value.bbox)
-  }
-  if (imageData.value?.field_name) {
-    loadTimeSeries(imageData.value.field_name, imageData.value)
-  }
+  // 等地图容器尺寸就绪后再定位，避免 fit 在 0 尺寸下计算出 NaN
+  setTimeout(() => {
+    if (imageData.value?.bbox) {
+      showImageBBox(imageData.value.bbox)
+    }
+    if (imageData.value?.field_name) {
+      loadTimeSeries(imageData.value.field_name, imageData.value)
+    }
+  }, 150)
 })
 
 onUnmounted(() => {
@@ -550,6 +553,12 @@ function showImageBBox(bbox: number[]) {
   bboxSource.addFeature(new Feature({ geometry: new Polygon(coords) }))
   const extent = new Polygon(coords).getExtent()
   map.getView().fit(extent, { padding: [60, 60], maxZoom: 18 })
+
+  // 小范围 extent 的精度问题：fit 后 center 可能变成 NaN，导致整幅地图无法渲染
+  const centerAfterFit = map.getView().getCenter()
+  if (centerAfterFit && (isNaN(centerAfterFit[0]) || isNaN(centerAfterFit[1]))) {
+    map.getView().setCenter([(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2])
+  }
 }
 
 // ── Fullscreen ──
