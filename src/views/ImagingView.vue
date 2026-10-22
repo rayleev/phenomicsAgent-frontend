@@ -193,10 +193,17 @@
             </div>
           </div>
         </div>
+
+        <!-- Time series slider -->
+        <TimeSeriesSlider
+          :images="timeImages"
+          v-model="timeDate"
+          @select="onTimeSelect"
+        />
       </div>
 
       <!-- Right chat panel (resizable via left edge drag) -->
-      <div class="chat-panel" :style="{ width: chatPanelWidth + 'px', minWidth: chatPanelWidth + 'px' }">
+      <div v-if="!chatCollapsed" class="chat-panel" :style="{ width: chatPanelWidth + 'px', minWidth: chatPanelWidth + 'px' }">
         <!-- Drag handle on left edge -->
         <div
           class="chat-panel-drag-handle"
@@ -210,7 +217,10 @@
               <span class="chat-header-title">影像助手</span>
               <span v-if="currentConvId" class="chat-header-conv">{{ currentConvTitle }}</span>
             </div>
-            <button class="btn-new-conv" title="新建对话" @click="onNewConversation">+ 新对话</button>
+            <div class="chat-header-actions">
+              <button class="btn-new-conv" title="新建对话" @click="onNewConversation">+ 新对话</button>
+              <button class="btn-collapse" title="收起助手" @click="chatCollapsed = true">»</button>
+            </div>
           </div>
 
           <div class="chat-messages" ref="chatEl">
@@ -310,6 +320,12 @@
           />
         </div>
       </div>
+
+      <!-- Collapsed chat strip -->
+      <button v-else class="chat-panel-collapsed" title="展开影像助手" @click="chatCollapsed = false">
+        <span class="chat-panel-collapsed-icon">💬</span>
+        <span class="chat-panel-collapsed-text">影像助手</span>
+      </button>
     </div>
   </div>
 </template>
@@ -334,6 +350,7 @@ import { Circle as CircleStyle, Fill, Stroke, Style, Text } from 'ol/style'
 import { Polygon } from 'ol/geom'
 import { useChat } from '../composables/useChat'
 import Composer from '../components/Composer.vue'
+import TimeSeriesSlider from '../components/TimeSeriesSlider.vue'
 
 const router = useRouter()
 const {
@@ -349,6 +366,9 @@ const imageLayers = ref<any[]>([])
 const selectedImage = ref<any>(null)
 const chatPanelWidth = ref(380)
 const isMapReady = ref(false)
+const chatCollapsed = ref(false)
+const timeImages = ref<any[]>([])
+const timeDate = ref('')
 
 // ── Chat helpers ──
 const currentConvTitle = computed(() => {
@@ -365,6 +385,7 @@ function onNewConversation() {
 let map: Map | null = null
 let droneTileLayer: TileLayer<any> | null = null
 const bboxSource = new VectorSource()
+const timeBboxSource = new VectorSource()
 const drawnRegionSource = new VectorSource()
 const plotsSource = new VectorSource()
 let drawInteraction: Draw | null = null
@@ -515,7 +536,7 @@ async function initMap() {
 
   map = new Map({
     target: mapContainer.value,
-    layers: [baseLayer, annoLayer, droneTileLayer, bboxLayer, drawnRegionLayer, plotsLayer],
+    layers: [baseLayer, annoLayer, droneTileLayer, timeBboxLayer, bboxLayer, drawnRegionLayer, plotsLayer],
     view: new View({
       center: fromLonLat([109.213, 18.364]),
       zoom: 15,
@@ -1079,6 +1100,44 @@ function toDroneProxyUrl(url: string): string {
   return '/api/drone' + match[1]
 }
 
+async function loadTimeSeries(fieldName: string, initial?: any) {
+  if (!fieldName) return
+  try {
+    const resp = await fetch(`/api/drone/api/images?field_name=${encodeURIComponent(fieldName)}&page_size=200`)
+    if (!resp.ok) return
+    const data = await resp.json()
+    const items: any[] = (data.items || []).filter((it: any) => it.tile_url && it.bbox)
+    if (!items.length) return
+    timeImages.value = items
+    timeDate.value = initial?.survey_time ? String(initial.survey_time).slice(0, 10) : ''
+    if (initial) onTimeSelect(initial)
+  } catch (e) {
+    console.error('[ImagingView] 加载时间序列失败:', e)
+  }
+}
+
+function onTimeSelect(img: any) {
+  if (!img) return
+  if (droneTileLayer && img.tile_url) {
+    droneTileLayer.setSource(new XYZ({ url: toDroneProxyUrl(img.tile_url), maxZoom: MAP_MAX_ZOOM }))
+    droneTileLayer.setVisible(true)
+  }
+  if (img.bbox) {
+    timeBboxSource.clear()
+    const coords = [[
+      fromLonLat([img.bbox[0], img.bbox[1]]),
+      fromLonLat([img.bbox[2], img.bbox[1]]),
+      fromLonLat([img.bbox[2], img.bbox[3]]),
+      fromLonLat([img.bbox[0], img.bbox[3]]),
+      fromLonLat([img.bbox[0], img.bbox[1]]),
+    ]]
+    const feature = new Feature({ geometry: new Polygon(coords) })
+    feature.setStyle(new Style({ stroke: new Stroke({ color: '#f1c40f', width: 3 }) }))
+    timeBboxSource.addFeature(feature)
+  }
+  showImageDetail(img)
+}
+
 watch(messages, (msgs) => {
   for (const msg of msgs) {
     if (msg.role === 'assistant' && msg.tool_calls) {
@@ -1266,7 +1325,10 @@ function clearLayers() {
   _renderedResultKeys.clear()
 }
 
-function selectLayer(layer: any) { selectedImage.value = layer }
+function selectLayer(layer: any) {
+  selectedImage.value = layer
+  if (layer?.field_name) loadTimeSeries(layer.field_name, layer)
+}
 
 function toggleLayer(layer: any) {
   layer.visible = !layer.visible
@@ -1286,6 +1348,7 @@ function showImageDetail(img: any) {
   console.log('[ImageDetail] img.tile_url:', img.tile_url)
   modalImage.value = img
   showImageModal.value = true
+  if (img?.field_name) loadTimeSeries(img.field_name, img)
 }
 
 function closeImageModal() {
@@ -1484,6 +1547,64 @@ watch(drawnRegion, (newRegion) => {
   background: var(--celadon-pale);
   color: var(--celadon);
   border-color: var(--celadon);
+}
+
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-collapse {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--paper);
+  color: var(--ink-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.btn-collapse:hover {
+  background: var(--celadon-pale);
+  color: var(--celadon);
+  border-color: var(--celadon);
+}
+
+.chat-panel-collapsed {
+  width: 40px;
+  height: 100%;
+  border: none;
+  border-left: 1px solid var(--border-light);
+  background: var(--paper);
+  color: var(--ink-muted);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 14px 0;
+  transition: background .15s;
+}
+
+.chat-panel-collapsed:hover {
+  background: var(--celadon-pale);
+  color: var(--celadon);
+}
+
+.chat-panel-collapsed-icon {
+  font-size: 16px;
+}
+
+.chat-panel-collapsed-text {
+  writing-mode: vertical-rl;
+  font-size: 13px;
+  letter-spacing: 2px;
 }
 .chat-messages { flex: 1; overflow-y: auto; padding: 16px; }
 .chat-welcome { text-align: center; padding: 40px 20px; color: #888; }

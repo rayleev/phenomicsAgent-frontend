@@ -29,6 +29,12 @@
             <div class="info-row" v-if="imageData.bbox"><label>中心点</label><span>{{ centerPoint }}</span></div>
           </div>
         </div>
+
+        <TimeSeriesSlider
+          :images="timeImages"
+          v-model="timeDate"
+          @select="onTimeSelect"
+        />
       </div>
     </div>
   </div>
@@ -49,6 +55,7 @@ import { fromLonLat } from 'ol/proj'
 import Feature from 'ol/Feature'
 import { Fill, Stroke, Style } from 'ol/style'
 import { Polygon } from 'ol/geom'
+import TimeSeriesSlider from '../components/TimeSeriesSlider.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -69,6 +76,43 @@ const centerPoint = computed(() => {
 // OpenLayers objects
 let map: Map | null = null
 const bboxSource = new VectorSource()
+let droneTileLayer: TileLayer<any> | null = null
+
+// ── Time series state ──
+const timeImages = ref<any[]>([])
+const timeDate = ref('')
+
+function toDroneProxyUrl(url: string): string {
+  const match = url.match(/^https?:\/\/[^/]+(\/.*)$/)
+  if (!match) return url
+  return '/api/drone' + match[1]
+}
+
+async function loadTimeSeries(fieldName: string, initial?: any) {
+  if (!fieldName) return
+  try {
+    const resp = await fetch(`/api/drone/api/images?field_name=${encodeURIComponent(fieldName)}&page_size=200`)
+    if (!resp.ok) return
+    const data = await resp.json()
+    const items: any[] = (data.items || []).filter((it: any) => it.tile_url && it.bbox)
+    if (!items.length) return
+    timeImages.value = items
+    timeDate.value = initial?.survey_time ? String(initial.survey_time).slice(0, 10) : ''
+    onTimeSelect(initial || items[0])
+  } catch (e) {
+    console.error('[ImageLocation] 加载时间序列失败:', e)
+  }
+}
+
+function onTimeSelect(img: any) {
+  if (!img) return
+  if (droneTileLayer && img.tile_url) {
+    droneTileLayer.setSource(new XYZ({ url: toDroneProxyUrl(img.tile_url), maxZoom: 19 }))
+    droneTileLayer.setVisible(true)
+  }
+  if (img.bbox) showImageBBox(img.bbox)
+  imageData.value = { ...imageData.value, ...img }
+}
 
 // ── Tianditu config ──
 const TIANDITU_KEY = import.meta.env.VITE_TIANDITU_KEY || '976ad152f68499029b95bfa5313ac9cc'
@@ -92,6 +136,9 @@ onMounted(async () => {
 
   await initMap()
   checkApi()
+  if (imageData.value?.field_name) {
+    loadTimeSeries(imageData.value.field_name, imageData.value)
+  }
 })
 
 onUnmounted(() => {
@@ -136,12 +183,22 @@ async function initMap() {
     zIndex: 10,
   })
 
+  // 无人机影像瓦片图层（时间轴切换时更新源）
+  droneTileLayer = new TileLayer({
+    source: new XYZ({
+      url: '/api/drone/api/tiles/placeholder/{z}/{x}/{y}.png',
+      maxZoom: 19,
+    }),
+    zIndex: 5,
+    visible: false,
+  })
+
   // 初始中心点（默认位置）
   const initialCenter = fromLonLat([109.213, 18.364])
 
   map = new Map({
     target: mapContainer.value,
-    layers: [baseLayer, labelLayer, bboxLayer],
+    layers: [baseLayer, labelLayer, droneTileLayer, bboxLayer],
     view: new View({
       center: initialCenter,
       zoom: 15,

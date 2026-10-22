@@ -38,20 +38,20 @@
         </div>
         <div class="menu-subgroup" v-if="expandedGroups.imaging">
           <router-link
-            to="/imaging/map"
-            class="menu-sub-item"
-            :class="{ active: route.path === '/imaging/map' }"
-            @click="$emit('close-mobile')"
-          >
-            <span class="menu-text">卫星地图</span>
-          </router-link>
-          <router-link
             to="/imaging/fields"
             class="menu-sub-item"
             :class="{ active: route.path === '/imaging/fields' }"
             @click="$emit('close-mobile')"
           >
             <span class="menu-text">试验田管理</span>
+          </router-link>
+          <router-link
+            to="/imaging/map"
+            class="menu-sub-item"
+            :class="{ active: route.path === '/imaging/map' }"
+            @click="$emit('close-mobile')"
+          >
+            <span class="menu-text">卫星地图</span>
           </router-link>
         </div>
       </div>

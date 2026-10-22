@@ -22,9 +22,15 @@
           <button
             class="ipm-btn ipm-btn-primary"
             :disabled="!mosaicOriginalUrl"
-            :title="mosaicOriginalUrl ? '在新标签页打开 field-shape-web 重新划分小区' : '该小区暂无整块田影像'"
+            :title="mosaicOriginalUrl ? '在新标签页打开小区划分应用重新划分小区' : '该小区暂无整块田影像'"
             @click="openInFieldShape"
-          >🧩 在 field-shape-web 中打开</button>
+          >🧩 在小区划分应用中打开</button>
+          <button
+            class="ipm-btn"
+            :disabled="!satelliteImage"
+            :title="satelliteImage ? '在卫星地图中打开该影像位置' : '该影像缺少地理坐标信息'"
+            @click="openInSatelliteMap"
+          >🛰️ 在卫星地图中打开</button>
           <button class="ipm-close" title="关闭" @click="close">×</button>
         </div>
       </div>
@@ -172,6 +178,17 @@ function switchView(kind: ViewKind) {
 function openInFieldShape() {
   if (!mosaicOriginalUrl.value) return
   window.open(`${FIELD_SHAPE_URL}?image_url=${encodeURIComponent(mosaicOriginalUrl.value)}`, '_blank', 'noopener')
+}
+
+const satelliteImage = computed(() => {
+  const src = props.image
+  return src && Array.isArray(src.bbox) && src.bbox.length >= 4 ? src : null
+})
+
+function openInSatelliteMap() {
+  const src = satelliteImage.value
+  if (!src) return
+  router.push({ path: '/imaging/location', query: { image: JSON.stringify(src) } })
 }
 
 function close() {
@@ -389,13 +406,13 @@ onUnmounted(() => {
   position: relative;
   overflow: hidden;
   background: #111827;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   min-width: 0;
 }
 
 .ipm-img {
+  position: absolute;
+  top: 0;
+  left: 0;
   transform-origin: 0 0;
   max-width: none;
   user-select: none;

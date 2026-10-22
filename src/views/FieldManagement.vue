@@ -26,9 +26,9 @@
     <!-- 主内容区域 -->
     <div class="main-content">
       <!-- 左侧：筛选栏 + 数据表格 -->
-      <div class="table-section" :style="{ flex: showChatPanel ? '1' : '1', minWidth: '0' }">
+      <div class="table-section" :style="{ flex: '1', minWidth: '0' }">
         <!-- 筛选栏 -->
-        <div class="filter-bar" v-if="!showChatPanel || true">
+        <div class="filter-bar">
           <div class="filter-item">
             <label>状态：</label>
             <select v-model="filters.status" @change="applyFilters">
@@ -73,23 +73,8 @@
           <button class="btn-secondary" @click="resetFilters">重置</button>
         </div>
 
-        <!-- 欢迎屏幕（未发送消息时显示） -->
-        <div v-if="!showChatPanel" class="welcome-screen">
-          <div class="welcome-content">
-            <div class="welcome-icon">🌾</div>
-            <h2 class="welcome-title">试验田数据助手</h2>
-            <p class="welcome-subtitle">我可以帮你查询、管理试验田数据，直接提问或点击下方示例开始</p>
-            <div class="welcome-chips">
-              <span class="welcome-chip primary" @click="sendExample('查看武汉水稻抗旱试验基地的数据')">查看武汉水稻抗旱试验基地的数据</span>
-              <span class="welcome-chip primary" @click="sendExample('查看测试田块2的数据')">查看测试田块2的数据</span>
-              <span class="welcome-chip" @click="sendExample('显示所有就绪状态的影像')">显示所有就绪状态的影像</span>
-              <span class="welcome-chip" @click="sendExample('帮我创建一个新记录')">帮我创建一个新记录</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 数据表格（有搜索结果时显示） -->
-        <div v-else class="table-container">
+        <!-- 数据表格 -->
+        <div class="table-container">
           <table class="data-table">
             <thead>
               <tr>
@@ -149,7 +134,7 @@
         </div>
 
         <!-- 分页 -->
-        <div class="pagination" v-if="showChatPanel && !usingSearchResults">
+        <div class="pagination" v-if="!usingSearchResults">
           <div class="pagination-info">
             共 {{ total }} 条，第 {{ page }} / {{ totalPages }} 页
           </div>
@@ -164,7 +149,7 @@
       </div>
 
       <!-- 右侧：聊天面板 -->
-      <div v-if="showChatPanel" class="chat-panel" :style="{ width: chatPanelWidth + 'px', minWidth: chatPanelWidth + 'px' }">
+      <div v-if="!chatCollapsed" class="chat-panel" :style="{ width: chatPanelWidth + 'px', minWidth: chatPanelWidth + 'px' }">
         <!-- Drag handle on left edge -->
         <div
           class="chat-panel-drag-handle"
@@ -178,7 +163,10 @@
               <span class="chat-header-title">试验田助手</span>
               <span v-if="currentConvId" class="chat-header-conv">{{ currentConvTitle }}</span>
             </div>
-            <button class="btn-new-conv" title="新建对话" @click="onNewConversation">+ 新对话</button>
+            <div class="chat-header-actions">
+              <button class="btn-new-conv" title="新建对话" @click="onNewConversation">+ 新对话</button>
+              <button class="btn-collapse" title="收起助手" @click="chatCollapsed = true">»</button>
+            </div>
           </div>
 
           <div class="chat-messages" ref="chatEl">
@@ -245,21 +233,15 @@
             :show-thinking="false"
             :show-services="false"
             :fixed-services="['search_fields', 'create_field', 'update_field', 'delete_field']"
-            @send="onComposerSend"
           />
         </div>
       </div>
-    </div>
 
-    <!-- 底部 Composer（未发送消息时显示） -->
-    <div v-if="!showChatPanel" class="bottom-composer">
-      <Composer
-        placeholder="询问试验田数据，或描述如何管理记录… (Enter 发送，Shift+Enter 换行)"
-        :show-thinking="false"
-        :show-services="false"
-        :fixed-services="['search_fields', 'create_field', 'update_field', 'delete_field']"
-        @send="onComposerSend"
-      />
+      <!-- 收起后的细边栏 -->
+      <button v-else class="chat-panel-collapsed" title="展开试验田助手" @click="chatCollapsed = false">
+        <span class="chat-panel-collapsed-icon">💬</span>
+        <span class="chat-panel-collapsed-text">试验田助手</span>
+      </button>
     </div>
 
     <!-- 新增/编辑弹窗 -->
@@ -403,7 +385,7 @@ const {
   newConversation,
 } = useChat()
 
-const showChatPanel = ref(false)
+const chatCollapsed = ref(false)
 const searchResults = ref<ImageItem[] | null>(null)
 const chatPanelWidth = ref(380)
 const chatEl = ref<HTMLElement | null>(null)
@@ -446,7 +428,6 @@ const currentConvTitle = computed(() => {
 
 function onNewConversation() {
   newConversation()
-  showChatPanel.value = true
 }
 
 // ── Drag to resize chat panel ──
@@ -777,23 +758,6 @@ async function onDelete(item: ImageItem) {
   } catch (e: any) {
     alert(e.message || '删除失败')
   }
-}
-
-// ── Chat functions ──
-function onComposerSend(text: string) {
-  if (!showChatPanel.value) {
-    showChatPanel.value = true
-  }
-}
-
-function sendExample(text: string) {
-  if (!showChatPanel.value) {
-    showChatPanel.value = true
-  }
-  // Dispatch event for Composer to pick up
-  nextTick(() => {
-    window.dispatchEvent(new CustomEvent('phenomics:example', { detail: text }))
-  })
 }
 
 // Watch messages for tool calls
@@ -1336,6 +1300,64 @@ onUnmounted(() => {
   background: var(--celadon-pale);
   color: var(--celadon);
   border-color: var(--celadon);
+}
+
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-collapse {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--paper);
+  color: var(--ink-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.btn-collapse:hover {
+  background: var(--celadon-pale);
+  color: var(--celadon);
+  border-color: var(--celadon);
+}
+
+.chat-panel-collapsed {
+  width: 40px;
+  height: 100%;
+  border: none;
+  border-left: 1px solid var(--border-light);
+  background: var(--paper);
+  color: var(--ink-muted);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 14px 0;
+  transition: background .15s;
+}
+
+.chat-panel-collapsed:hover {
+  background: var(--celadon-pale);
+  color: var(--celadon);
+}
+
+.chat-panel-collapsed-icon {
+  font-size: 16px;
+}
+
+.chat-panel-collapsed-text {
+  writing-mode: vertical-rl;
+  font-size: 13px;
+  letter-spacing: 2px;
 }
 
 .chat-messages {
