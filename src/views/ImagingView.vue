@@ -518,6 +518,15 @@ async function initMap() {
     zIndex: 15,
   })
 
+  // Time series bounding box layer
+  const timeBboxLayer = new VectorLayer({
+    source: timeBboxSource,
+    style: new Style({
+      stroke: new Stroke({ color: '#f1c40f', width: 3 }),
+    }),
+    zIndex: 12,
+  })
+
   // Drawn region layer
   const drawnRegionLayer = new VectorLayer({
     source: drawnRegionSource,
