@@ -97,7 +97,7 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const router = useRouter()
 
 // field-shape-web 部署地址（新标签页跳转目标）
-const FIELD_SHAPE_URL = 'http://10.33.105.166:8888/'
+const FIELD_SHAPE_URL = 'http://10.33.105.145:8888/'
 // 本服务在 nginx 下的代理前缀（同源，避免跨域）
 const PROXY_BASE = '/api/drone'
 
@@ -184,7 +184,7 @@ function openInFieldShape() {
 }
 
 function openInSatelliteMap() {
-  const img = previewImage.value
+  const img = props.image
   if (!img?.bbox) return
   router.push({
     path: '/imaging/location',
