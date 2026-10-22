@@ -403,11 +403,16 @@ onMounted(async () => {
 
   // 等地图容器尺寸就绪后再定位，避免 fit 在 0 尺寸下计算出 NaN
   setTimeout(() => {
-    if (imageData.value?.bbox) {
-      showImageBBox(imageData.value.bbox)
+    const img = imageData.value
+    if (img?.tile_url && droneTileLayer) {
+      droneTileLayer.setSource(new XYZ({ url: toDroneProxyUrl(img.tile_url), maxZoom: MAP_MAX_ZOOM }))
+      droneTileLayer.setVisible(true)
     }
-    if (imageData.value?.field_name) {
-      loadTimeSeries(imageData.value.field_name, imageData.value)
+    if (img?.bbox) {
+      showImageBBox(img.bbox)
+    }
+    if (img?.field_name) {
+      loadTimeSeries(img.field_name, img)
     }
   }, 150)
 })
@@ -436,10 +441,13 @@ async function initMap() {
   const baseUrl = useTianditu ? tiandituUrl : esriWorldImageryUrl
 
   // Base layer
+  // crossOrigin: null —— 天地图等瓦片服务不返回 CORS 头，若用默认的
+  // 'anonymous' 会被 Chrome 的 ORB 拦截导致底图空白；改用 no-cors 模式仅做展示。
   const baseLayer = new TileLayer({
     source: new XYZ({
       url: baseUrl,
       maxZoom: MAP_MAX_ZOOM,
+      crossOrigin: null as any,
     }),
     zIndex: 0,
   })
@@ -449,6 +457,7 @@ async function initMap() {
     source: new XYZ({
       url: useTianditu ? tiandituAnnoUrl : cartoLightUrl,
       maxZoom: MAP_MAX_ZOOM,
+      crossOrigin: null as any,
     }),
     zIndex: 1,
     opacity: useTianditu ? 1 : 0,
@@ -552,7 +561,10 @@ function showImageBBox(bbox: number[]) {
   ]]
   bboxSource.addFeature(new Feature({ geometry: new Polygon(coords) }))
   const extent = new Polygon(coords).getExtent()
-  map.getView().fit(extent, { padding: [60, 60], maxZoom: 18 })
+  // 小区/整块田影像的地理范围往往只有几米到几十米，底图最大级别（18）下
+  // 影像仅占几像素而"极小"。这里放宽到 MAP_MAX_ZOOM(22)，让无人机影像
+  // 可以放大到可见尺寸（底图超出 18 级会被拉伸，属正常现象）。
+  map.getView().fit(extent, { padding: [60, 60], maxZoom: MAP_MAX_ZOOM })
 
   // 小范围 extent 的精度问题：fit 后 center 可能变成 NaN，导致整幅地图无法渲染
   const centerAfterFit = map.getView().getCenter()

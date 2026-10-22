@@ -184,16 +184,18 @@ function openInFieldShape() {
 }
 
 function openInSatelliteMap() {
-  const img = props.image
-  if (!img?.bbox) return
+  const src = satelliteImage.value
+  if (!src?.bbox) return
+  // 携带当前视图的数据：整块田视图下传 mosaic（含 tile_url/bbox），
+  // 小区视图下传单幅影像，卫星地图据此渲染对应的影像范围。
   router.push({
     path: '/imaging/map',
-    query: { image: JSON.stringify(img) }
+    query: { image: JSON.stringify({ ...src, __view: view.value }) }
   })
 }
 
 const satelliteImage = computed(() => {
-  const src = props.image
+  const src = view.value === 'mosaic' ? props.mosaic : props.image
   return src && Array.isArray(src.bbox) && src.bbox.length >= 4 ? src : null
 })
 
