@@ -273,7 +273,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -294,6 +294,7 @@ import Composer from '../components/Composer.vue'
 import TimeSeriesSlider from '../components/TimeSeriesSlider.vue'
 
 const router = useRouter()
+const route = useRoute()
 const {
   messages, isStreaming, streamContent,
   loadConversations, conversations, currentConvId, newConversation,
@@ -308,7 +309,7 @@ const selectedImage = ref<any>(null)
 const imageData = ref<any>(null)
 const chatPanelWidth = ref(380)
 const isMapReady = ref(false)
-const chatCollapsed = ref(false)
+const chatCollapsed = ref(true)
 const timeImages = ref<any[]>([])
 const timeDate = ref('')
 

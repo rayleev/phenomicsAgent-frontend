@@ -388,7 +388,7 @@ const {
   newConversation,
 } = useChat()
 
-const chatCollapsed = ref(false)
+const chatCollapsed = ref(true)
 const searchResults = ref<ImageItem[] | null>(null)
 const chatPanelWidth = ref(380)
 const chatEl = ref<HTMLElement | null>(null)
