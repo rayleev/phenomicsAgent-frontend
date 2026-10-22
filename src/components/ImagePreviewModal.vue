@@ -76,6 +76,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 
 /**
  * 影像预览弹窗：
@@ -92,6 +93,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ (e: 'close'): void }>()
+
+const router = useRouter()
 
 // field-shape-web 部署地址（新标签页跳转目标）
 const FIELD_SHAPE_URL = 'http://10.33.105.166:8888/'
@@ -180,15 +183,27 @@ function openInFieldShape() {
   window.open(`${FIELD_SHAPE_URL}?image_url=${encodeURIComponent(mosaicOriginalUrl.value)}`, '_blank', 'noopener')
 }
 
+function openInSatelliteMap() {
+  const img = previewImage.value
+  if (!img?.bbox) return
+  router.push({
+    path: '/imaging/location',
+    query: { image: JSON.stringify(img) }
+  })
+}
+
 const satelliteImage = computed(() => {
   const src = props.image
   return src && Array.isArray(src.bbox) && src.bbox.length >= 4 ? src : null
 })
 
 function openInSatelliteMap() {
-  const src = satelliteImage.value
-  if (!src) return
-  router.push({ path: '/imaging/location', query: { image: JSON.stringify(src) } })
+  const img = previewImage.value
+  if (!img?.bbox) return
+  router.push({
+    path: '/imaging/location',
+    query: { image: JSON.stringify(img) }
+  })
 }
 
 function close() {
