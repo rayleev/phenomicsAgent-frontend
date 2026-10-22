@@ -1006,7 +1006,7 @@ function onTimeSelect(img: any) {
     feature.setStyle(new Style({ stroke: new Stroke({ color: '#f1c40f', width: 3 }) }))
     timeBboxSource.addFeature(feature)
   }
-  showImageDetail(img)
+  imageData.value = img
 }
 
 watch(messages, (msgs) => {
