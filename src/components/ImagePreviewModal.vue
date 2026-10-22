@@ -197,15 +197,6 @@ const satelliteImage = computed(() => {
   return src && Array.isArray(src.bbox) && src.bbox.length >= 4 ? src : null
 })
 
-function openInSatelliteMap() {
-  const img = previewImage.value
-  if (!img?.bbox) return
-  router.push({
-    path: '/imaging/location',
-    query: { image: JSON.stringify(img) }
-  })
-}
-
 function close() {
   emit('close')
 }
