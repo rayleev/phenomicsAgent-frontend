@@ -402,17 +402,27 @@ onMounted(async () => {
   document.addEventListener('mouseup', onDragEnd)
 
   // 等地图容器尺寸就绪后再定位，避免 fit 在 0 尺寸下计算出 NaN
-  setTimeout(() => {
+  setTimeout(async () => {
     const img = imageData.value
-    if (img?.tile_url && droneTileLayer) {
+    if (!img) return
+    if (img.tile_url && droneTileLayer) {
       droneTileLayer.setSource(new XYZ({ url: toDroneProxyUrl(img.tile_url), maxZoom: MAP_MAX_ZOOM }))
       droneTileLayer.setVisible(true)
     }
-    if (img?.bbox) {
+    if (img.bbox) {
       showImageBBox(img.bbox)
     }
-    if (img?.field_name) {
-      loadTimeSeries(img.field_name, img)
+    // 时间轴数据源：小区影像自带 field_name；整块田拼接影像没有 field_name，
+    // 用 mission_id 反查其田块名，复用该田块的时间序列（拖动切换日期）。
+    let fieldName = img.field_name
+    let initial = img
+    if (!fieldName && img.mission_id) {
+      const info = await resolveMissionInfo(img.mission_id)
+      fieldName = info.fieldName
+      if (info.surveyTime) initial = { ...img, survey_time: info.surveyTime }
+    }
+    if (fieldName) {
+      loadTimeSeries(fieldName, initial)
     }
   }, 150)
 })
@@ -440,28 +450,40 @@ async function initMap() {
   const useTianditu = TIANDITU_KEY && TIANDITU_KEY !== '976ad152f68499029b95bfa5313ac9cc'
   const baseUrl = useTianditu ? tiandituUrl : esriWorldImageryUrl
 
+  const makeBaseSource = (url: string) =>
+    new XYZ({ url, maxZoom: MAP_MAX_ZOOM, crossOrigin: null as any })
+
   // Base layer
   // crossOrigin: null —— 天地图等瓦片服务不返回 CORS 头，若用默认的
   // 'anonymous' 会被 Chrome 的 ORB 拦截导致底图空白；改用 no-cors 模式仅做展示。
   const baseLayer = new TileLayer({
-    source: new XYZ({
-      url: baseUrl,
-      maxZoom: MAP_MAX_ZOOM,
-      crossOrigin: null as any,
-    }),
+    source: makeBaseSource(baseUrl),
     zIndex: 0,
   })
 
   // Annotation layer (only for Tianditu)
   const annoLayer = new TileLayer({
-    source: new XYZ({
-      url: useTianditu ? tiandituAnnoUrl : cartoLightUrl,
-      maxZoom: MAP_MAX_ZOOM,
-      crossOrigin: null as any,
-    }),
+    source: makeBaseSource(useTianditu ? tiandituAnnoUrl : cartoLightUrl),
     zIndex: 1,
     opacity: useTianditu ? 1 : 0,
   })
+
+  // 天地图底图兜底：若连续多个瓦片加载失败（如 key 失效 / WAF 拦截返回 418），
+  // 自动回退到 ESRI World Imagery，保证底图始终可见。
+  // 注意：这里的 ESRI 地址位于运行时回调中，不会被构建时摇树删除。
+  if (useTianditu) {
+    let tdErrors = 0
+    let fellBack = false
+    baseLayer.getSource()!.on('tileloaderror', () => {
+      if (fellBack) return
+      if (++tdErrors >= 3) {
+        fellBack = true
+        console.warn('[Map] 天地图底图加载失败，已自动回退到 ESRI World Imagery')
+        baseLayer.setSource(makeBaseSource(esriWorldImageryUrl))
+        annoLayer.setVisible(false)
+      }
+    })
+  }
 
   // Drone tile layer (dynamic source, set on search)
   droneTileLayer = new TileLayer({
@@ -983,10 +1005,26 @@ function toDroneProxyUrl(url: string): string {
   return '/api/drone' + match[1]
 }
 
+// 用 mission_id 反查该架次的田块名与调查时间（拼接影像自身没有这些字段）
+async function resolveMissionInfo(missionId: string): Promise<{ fieldName: string; surveyTime: string }> {
+  try {
+    const resp = await fetch(`/api/drone/api/images?mission_id=${encodeURIComponent(missionId)}&page_size=1`)
+    if (!resp.ok) return { fieldName: '', surveyTime: '' }
+    const data = await resp.json()
+    const first = data.items?.[0]
+    return { fieldName: first?.field_name || '', surveyTime: first?.survey_time || '' }
+  } catch (e) {
+    console.error('[ImagingView] 反查 mission 信息失败:', e)
+    return { fieldName: '', surveyTime: '' }
+  }
+}
+
 async function loadTimeSeries(fieldName: string, initial?: any) {
   if (!fieldName) return
   try {
-    const resp = await fetch(`/api/drone/api/images?field_name=${encodeURIComponent(fieldName)}&page_size=200`)
+    // 该试验田一期可能有几十个小区，多期合计上千张；分页太小会导致时间轴缺日期，
+    // 因此这里取足够大的分页（时间轴会按日期去重，每期只保留一张）。
+    const resp = await fetch(`/api/drone/api/images?field_name=${encodeURIComponent(fieldName)}&page_size=5000`)
     if (!resp.ok) return
     const data = await resp.json()
     const items: any[] = (data.items || [])
