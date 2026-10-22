@@ -27,9 +27,7 @@ const routes = [
   },
   { 
     path: '/imaging/location', 
-    name: 'ImageLocation', 
-    component: () => import('./views/ImageLocationView.vue'), 
-    meta: { requiresAuth: true } 
+    redirect: '/imaging/map'
   },
   { path: '/:pathMatch(.*)*', redirect: '/chat' },
 ]

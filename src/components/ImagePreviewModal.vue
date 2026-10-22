@@ -187,7 +187,7 @@ function openInSatelliteMap() {
   const img = props.image
   if (!img?.bbox) return
   router.push({
-    path: '/imaging/location',
+    path: '/imaging/map',
     query: { image: JSON.stringify(img) }
   })
 }

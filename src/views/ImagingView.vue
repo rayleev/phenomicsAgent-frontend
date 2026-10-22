@@ -15,36 +15,6 @@
       <div class="map-area">
         <div ref="mapContainer" class="map-container"></div>
 
-        <!-- Drawing toolbar -->
-        <div class="draw-toolbar" v-if="isMapReady">
-          <button
-            class="draw-btn"
-            :class="{ active: drawMode === 'rect' }"
-            @click="toggleDraw('rect')"
-            title="绘制矩形"
-          >▭</button>
-          <button
-            class="draw-btn"
-            :class="{ active: drawMode === 'polygon' }"
-            @click="toggleDraw('polygon')"
-            title="绘制多边形"
-          >⬠</button>
-          <button
-            class="draw-btn"
-            @click="clearDrawnRegion"
-            :disabled="!drawnRegion"
-            title="清除区域"
-          >✕</button>
-        </div>
-
-        <!-- Drawing hint -->
-        <div class="draw-hint" v-if="drawMode === 'rect'">
-          拖拽绘制矩形，松开完成
-        </div>
-        <div class="draw-hint" v-if="drawMode === 'polygon'">
-          点击添加顶点，双击或按 Enter 完成
-        </div>
-
         <!-- Image layers panel -->
         <div class="layer-panel" v-if="imageLayers.length > 0">
           <div class="layer-panel-title">影像图层</div>
@@ -67,36 +37,20 @@
           </div>
         </div>
 
-        <!-- Image info popup -->
-        <div class="info-popup" v-if="selectedImage">
-          <div class="info-popup-header">
-            <span>{{ selectedImage.field_name || selectedImage.task_id }}</span>
-            <button class="info-close" @click="selectedImage = null">✕</button>
+        <!-- Image info panel -->
+        <div class="info-panel" v-if="imageData">
+          <div class="info-panel-header">
+            <span>{{ imageData.field_name || imageData.task_id || '影像信息' }}</span>
+            <button class="info-close" @click="imageData = null">✕</button>
           </div>
-          <div class="info-popup-body">
-            <div class="info-row"><label>任务编号</label><span>{{ selectedImage.task_id }}</span></div>
-            <div class="info-row"><label>调查阶段</label><span>{{ selectedImage.survey_stage || '-' }}</span></div>
-            <div class="info-row"><label>调查时间</label><span>{{ selectedImage.survey_time || '-' }}</span></div>
-            <div class="info-row"><label>相似度</label><span>{{ (selectedImage.score * 100).toFixed(1) }}%</span></div>
-          </div>
-        </div>
-
-        <!-- Plots result panel -->
-        <div class="plots-panel" v-if="plotsResult">
-          <div class="plots-panel-header">
-            <span>划分结果 ({{ plotsResult.total }} 个小区)</span>
-            <button class="info-close" @click="clearPlots">✕</button>
-          </div>
-          <div class="plots-panel-body">
-            <div
-              v-for="plot in plotsResult.plots"
-              :key="plot.id"
-              class="plot-item"
-              @click="flyToPlot(plot)"
-            >
-              <span class="plot-label">{{ plot.label }}</span>
-              <span class="plot-area">{{ plot.area_m2.toFixed(1) }} m²</span>
-            </div>
+          <div class="info-panel-body">
+            <div class="info-row"><label>任务编号</label><span>{{ imageData.task_id || '-' }}</span></div>
+            <div class="info-row"><label>田块名称</label><span>{{ imageData.field_name || '-' }}</span></div>
+            <div class="info-row"><label>调查阶段</label><span>{{ imageData.survey_stage || '-' }}</span></div>
+            <div class="info-row"><label>调查时间</label><span>{{ imageData.survey_time || '-' }}</span></div>
+            <div class="info-row" v-if="imageData.score"><label>相似度</label><span>{{ (imageData.score * 100).toFixed(1) }}%</span></div>
+            <div class="info-row" v-if="imageData.bbox"><label>地理范围</label><span>[{{ imageData.bbox.join(', ') }}]</span></div>
+            <div class="info-row" v-if="imageData.bbox"><label>中心点</label><span>{{ centerPoint }}</span></div>
           </div>
         </div>
 
@@ -128,13 +82,6 @@
             <div class="image-modal-footer">
               <button class="btn-fullscreen" @click="openFullscreen(modalImage)">
                 🔍 全屏查看
-              </button>
-              <button
-                class="btn-satellite"
-                :disabled="!modalImage?.bbox"
-                @click="modalImage?.bbox && goToSatelliteLocation(modalImage)"
-              >
-                🛰️ 查看卫星位置
               </button>
             </div>
           </div>
@@ -305,15 +252,9 @@
             </div>
           </div>
 
-          <!-- Region hint -->
-          <div class="region-hint" v-if="drawnRegion">
-            <span>已绘制区域，描述如何划分…</span>
-            <button @click="clearDrawnRegion">清除</button>
-          </div>
-
           <!-- Shared Composer (imaging mode: fixed services, no thinking) -->
           <Composer
-            placeholder="描述你想查看的影像，或描述如何划分区域… (Enter 发送，Shift+Enter 换行)"
+            placeholder="描述你想查看的影像… (Enter 发送，Shift+Enter 换行)"
             :show-thinking="false"
             :show-services="false"
             :fixed-services="['get_image_detail']"
@@ -364,6 +305,7 @@ const chatEl = ref<HTMLElement | null>(null)
 const apiConnected = ref(false)
 const imageLayers = ref<any[]>([])
 const selectedImage = ref<any>(null)
+const imageData = ref<any>(null)
 const chatPanelWidth = ref(380)
 const isMapReady = ref(false)
 const chatCollapsed = ref(false)
@@ -386,14 +328,6 @@ let map: Map | null = null
 let droneTileLayer: TileLayer<any> | null = null
 const bboxSource = new VectorSource()
 const timeBboxSource = new VectorSource()
-const drawnRegionSource = new VectorSource()
-const plotsSource = new VectorSource()
-let drawInteraction: Draw | null = null
-
-// Drawing state
-const drawMode = ref<'idle' | 'rect' | 'polygon'>('idle')
-const drawnRegion = ref<{ type: string; coordinates: number[] } | null>(null)
-const plotsResult = ref<any>(null)
 
 // ── Fullscreen state ──
 const showFullscreen = ref(false)
@@ -450,11 +384,28 @@ function openMobileSidebar() {
 
 // ── Map initialization ──
 onMounted(async () => {
+  // 从路由参数恢复影像（试验田管理「在卫星地图中打开」跳转过来）
+  const imageParam = route.query.image
+  if (imageParam) {
+    try {
+      imageData.value = JSON.parse(imageParam as string)
+    } catch (e) {
+      console.error('[ImagingView] 解析 image 参数失败:', e)
+    }
+  }
+
   await initMap()
   await loadConversations()
   checkApi()
   document.addEventListener('mousemove', onDragMove)
   document.addEventListener('mouseup', onDragEnd)
+
+  if (imageData.value?.bbox) {
+    showImageBBox(imageData.value.bbox)
+  }
+  if (imageData.value?.field_name) {
+    loadTimeSeries(imageData.value.field_name, imageData.value)
+  }
 })
 
 onUnmounted(() => {
@@ -527,25 +478,9 @@ async function initMap() {
     zIndex: 12,
   })
 
-  // Drawn region layer
-  const drawnRegionLayer = new VectorLayer({
-    source: drawnRegionSource,
-    style: new Style({
-      stroke: new Stroke({ color: '#e74c3c', width: 3 }),
-      fill: new Fill({ color: 'rgba(231, 76, 60, 0.15)' }),
-    }),
-    zIndex: 20,
-  })
-
-  // Plots layer
-  const plotsLayer = new VectorLayer({
-    source: plotsSource,
-    zIndex: 30,
-  })
-
   map = new Map({
     target: mapContainer.value,
-    layers: [baseLayer, annoLayer, droneTileLayer, timeBboxLayer, bboxLayer, drawnRegionLayer, plotsLayer],
+    layers: [baseLayer, annoLayer, droneTileLayer, timeBboxLayer, bboxLayer],
     view: new View({
       center: fromLonLat([109.213, 18.364]),
       zoom: 15,
@@ -592,111 +527,28 @@ function defaultSummary(toolCalls: any[] | null) {
   return summaries.join('')
 }
 
-// ── Drawing ──
-function toggleDraw(type: 'rect' | 'polygon') {
-  console.log('[Drawing] toggleDraw called, type:', type, 'current mode:', drawMode.value, 'map ready:', isMapReady.value)
-  if (drawMode.value === type) {
-    drawMode.value = 'idle'
-    removeDrawInteraction()
-    return
-  }
-  drawMode.value = type
-  addDrawInteraction(type)
-}
+// ── Image bbox ──
+const centerPoint = computed(() => {
+  const bbox = imageData.value?.bbox
+  if (!bbox || bbox.length < 4) return '-'
+  const centerLon = ((bbox[0] + bbox[2]) / 2).toFixed(6)
+  const centerLat = ((bbox[1] + bbox[3]) / 2).toFixed(6)
+  return `${centerLat}, ${centerLon}`
+})
 
-function addDrawInteraction(type: 'rect' | 'polygon') {
-  if (!map) {
-    console.error('[Drawing] map is null!')
-    return
-  }
-  console.log('[Drawing] addDrawInteraction, type:', type)
-  removeDrawInteraction()
-
-  let geometryFunction: any
-  let drawType: any = 'Polygon'
-
-  if (type === 'rect') {
-    // 使用 LineString + 2个点来绘制矩形（OpenLayers 10.x 兼容）
-    drawType = 'LineString'
-    geometryFunction = (coordinates: any, geometry: any, projection: any) => {
-      if (!geometry) {
-        geometry = new Polygon([])
-      }
-      const start = coordinates[0]
-      const end = coordinates[coordinates.length - 1]
-      if (start && end) {
-        const minX = Math.min(start[0], end[0])
-        const maxX = Math.max(start[0], end[0])
-        const minY = Math.min(start[1], end[1])
-        const maxY = Math.max(start[1], end[1])
-        const rect = [
-          [minX, minY],
-          [maxX, minY],
-          [maxX, maxY],
-          [minX, maxY],
-          [minX, minY],
-        ]
-        geometry.setCoordinates([rect])
-      }
-      return geometry
-    }
-  }
-
-  drawInteraction = new Draw({
-    source: drawnRegionSource,
-    type: drawType,
-    geometryFunction,
-    maxPoints: type === 'rect' ? 2 : undefined,
-  })
-
-  drawInteraction.on('drawstart', () => {
-    console.log('[Drawing] drawstart')
-  })
-
-  drawInteraction.on('drawend', (e: any) => {
-    console.log('[Drawing] drawend', e.feature)
-    const feature = e.feature as Feature
-    const geom = feature.getGeometry() as Polygon
-    const coords = geom.getCoordinates()[0]
-    const wgs84Coords = coords.map((c: number[]) => toLonLat(c as [number, number]))
-    drawnRegion.value = {
-      type: 'Polygon',
-      coordinates: wgs84Coords,
-    }
-    console.log('[Drawing] drawn region set:', drawnRegion.value)
-    drawMode.value = 'idle'
-    removeDrawInteraction()
-  })
-
-  map.addInteraction(drawInteraction)
-  console.log('[Drawing] draw interaction added to map, active:', map.getInteractions().getLength())
-}
-
-function removeDrawInteraction() {
-  if (map && drawInteraction) {
-    map.removeInteraction(drawInteraction)
-    drawInteraction = null
-  }
-}
-
-function clearDrawnRegion() {
-  drawnRegionSource.clear()
-  drawnRegion.value = null
-  drawMode.value = 'idle'
-  removeDrawInteraction()
-}
-
-function clearPlots() {
-  plotsSource.clear()
-  plotsResult.value = null
-}
-
-function flyToPlot(plot: any) {
-  if (!map || !plot.polygon) return
-  const coords = plot.polygon[0].map((c: number[]) => fromLonLat(c as [number, number]))
-  // Create a temporary polygon to fit
-  const poly = new Polygon([coords])
-  map.getView().fit(poly.getExtent(), { padding: [50, 50], duration: 500 })
+function showImageBBox(bbox: number[]) {
+  if (!map || !bbox || bbox.length < 4) return
+  bboxSource.clear()
+  const coords = [[
+    fromLonLat([bbox[0], bbox[1]]),
+    fromLonLat([bbox[2], bbox[1]]),
+    fromLonLat([bbox[2], bbox[3]]),
+    fromLonLat([bbox[0], bbox[3]]),
+    fromLonLat([bbox[0], bbox[1]]),
+  ]]
+  bboxSource.addFeature(new Feature({ geometry: new Polygon(coords) }))
+  const extent = new Polygon(coords).getExtent()
+  map.getView().fit(extent, { padding: [60, 60], maxZoom: 18 })
 }
 
 // ── Fullscreen ──
@@ -1115,14 +967,23 @@ async function loadTimeSeries(fieldName: string, initial?: any) {
     const resp = await fetch(`/api/drone/api/images?field_name=${encodeURIComponent(fieldName)}&page_size=200`)
     if (!resp.ok) return
     const data = await resp.json()
-    const items: any[] = (data.items || []).filter((it: any) => it.tile_url && it.bbox)
+    const items: any[] = (data.items || [])
+      .filter((it: any) => it.tile_url && it.bbox)
+      .map((it: any) => ({ ...it, survey_time: it.survey_time || it.capture_date || it.flight_date }))
     if (!items.length) return
     timeImages.value = items
-    timeDate.value = initial?.survey_time ? String(initial.survey_time).slice(0, 10) : ''
+    const initialDate = dateKey(initial?.survey_time || initial?.capture_date || initial?.flight_date)
+    timeDate.value = initialDate || ''
     if (initial) onTimeSelect(initial)
   } catch (e) {
     console.error('[ImagingView] 加载时间序列失败:', e)
   }
+}
+
+function dateKey(v: any): string {
+  if (!v) return ''
+  const d = new Date(v)
+  return isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function onTimeSelect(img: any) {
@@ -1164,12 +1025,6 @@ watch(messages, (msgs) => {
             console.log('[ImagingView] first result tile_url:', tc.result.results[0].tile_url)
           }
           handleSearchResults(tc.result)
-        }
-        if (tc.tool_name === 'divide_plots' && tc.status === 'completed' && tc.result) {
-          const key = `${msg.id}:${tc.tool_name}:${JSON.stringify(tc.result)}`
-          if (_renderedResultKeys.has(key)) continue
-          _renderedResultKeys.add(key)
-          handlePlotsResult(tc.result)
         }
       }
     }
@@ -1300,42 +1155,17 @@ function handleSearchResults(result: any) {
   selectedImage.value = imageLayers.value[0]
 }
 
-function handlePlotsResult(result: any) {
-  if (!result?.plots || !map) return
-  plotsResult.value = result
-  plotsSource.clear()
-
-  result.plots.forEach((plot: any, idx: number) => {
-    if (!plot.polygon) return
-    const coords = plot.polygon[0].map((c: number[]) => fromLonLat(c as [number, number]))
-    const feature = new Feature({
-      geometry: new Polygon([coords]),
-    })
-    feature.setStyle(new Style({
-      stroke: new Stroke({ color: '#2ecc71', width: 2 }),
-      fill: new Fill({ color: 'rgba(46, 204, 113, 0.1)' }),
-      text: new Text({
-        text: plot.label,
-        font: '12px sans-serif',
-        fill: new Fill({ color: '#2ecc71' }),
-        stroke: new Stroke({ color: '#fff', width: 2 }),
-      }),
-    }))
-    plotsSource.addFeature(feature)
-  })
-}
-
 function clearLayers() {
   bboxSource.clear()
-  drawnRegionSource.clear()
-  plotsSource.clear()
   imageLayers.value = []
   selectedImage.value = null
+  imageData.value = null
   _renderedResultKeys.clear()
 }
 
 function selectLayer(layer: any) {
   selectedImage.value = layer
+  imageData.value = layer
   if (layer?.field_name) loadTimeSeries(layer.field_name, layer)
 }
 
@@ -1352,11 +1182,10 @@ const showImageModal = ref(false)
 const modalImage = ref<any>(null)
 
 function showImageDetail(img: any) {
-  console.log('[ImageDetail] showImageDetail called with img:', img)
-  console.log('[ImageDetail] img keys:', Object.keys(img))
-  console.log('[ImageDetail] img.tile_url:', img.tile_url)
   modalImage.value = img
   showImageModal.value = true
+  imageData.value = img
+  if (img?.bbox) showImageBBox(img.bbox)
   if (img?.field_name) loadTimeSeries(img.field_name, img)
 }
 
@@ -1364,23 +1193,6 @@ function closeImageModal() {
   showImageModal.value = false
   modalImage.value = null
 }
-
-// ── Navigate to satellite location page ──
-function goToSatelliteLocation(img: any) {
-  if (!img?.bbox) {
-    alert('该影像没有地理坐标信息')
-    return
-  }
-  router.push({
-    path: '/imaging/location',
-    query: { image: JSON.stringify(img) }
-  })
-}
-
-// ── Watch drawn region ──
-watch(drawnRegion, (newRegion) => {
-  console.log('[Drawing] drawnRegion changed:', newRegion)
-})
 </script>
 
 <style scoped>
@@ -1417,30 +1229,7 @@ watch(drawnRegion, (newRegion) => {
 .map-area { flex: 1; position: relative; min-width: 0; }
 .map-container { width: 100%; height: 100%; }
 
-/* Drawing toolbar */
-.draw-toolbar {
-  position: absolute; top: 12px; right: 12px;
-  background: rgba(255,255,255,0.95); border-radius: 10px; padding: 8px;
-  box-shadow: 0 2px 12px rgba(0,0,0,.15); z-index: 1000;
-  display: flex; gap: 4px;
-}
-.draw-btn {
-  width: 36px; height: 36px; border: 1px solid var(--border);
-  background: #fff; border-radius: 8px; cursor: pointer;
-  font-size: 16px; display: flex; align-items: center; justify-content: center;
-  transition: all .15s;
-}
-.draw-btn:hover { background: var(--rice); }
-.draw-btn.active { background: var(--celadon); color: #fff; border-color: var(--celadon); }
-.draw-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.draw-hint {
-  position: absolute; top: 60px; right: 12px;
-  background: rgba(255,255,255,0.95); border-radius: 8px; padding: 6px 12px;
-  font-size: 12px; color: var(--ink-muted); z-index: 1000;
-  box-shadow: 0 2px 8px rgba(0,0,0,.1);
-}
-
+/* Layer panel */
 .layer-panel {
   position: absolute; top: 12px; left: 12px;
   background: rgba(255,255,255,0.95); border-radius: 10px; padding: 12px;
@@ -1457,29 +1246,19 @@ watch(drawnRegion, (newRegion) => {
 .layer-eye:hover { transform: scale(1.15); }
 .layer-eye.off { opacity: 0.3; filter: grayscale(1); }
 
-.info-popup {
+/* Info panel */
+.info-panel {
   position: absolute; bottom: 12px; left: 12px;
   background: rgba(255,255,255,0.97); border-radius: 10px;
   box-shadow: 0 2px 16px rgba(0,0,0,.18); width: 320px; max-height: 300px; overflow-y: auto; z-index: 1000;
 }
-.info-popup-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; font-weight: 600; font-size: 14px; border-bottom: 1px solid #eee; }
+.info-panel-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; font-weight: 600; font-size: 14px; border-bottom: 1px solid #eee; }
 .info-close { background: none; border: none; cursor: pointer; font-size: 16px; color: #999; }
-.info-popup-body { padding: 12px 14px; }
+.info-close:hover { color: #333; }
+.info-panel-body { padding: 12px 14px; }
 .info-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
-.info-row label { color: #888; }
-
-/* Plots panel */
-.plots-panel {
-  position: absolute; bottom: 12px; right: 12px;
-  background: rgba(255,255,255,0.97); border-radius: 10px;
-  box-shadow: 0 2px 16px rgba(0,0,0,.18); width: 220px; max-height: 300px; overflow-y: auto; z-index: 1000;
-}
-.plots-panel-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; font-weight: 600; font-size: 13px; border-bottom: 1px solid #eee; position: sticky; top: 0; background: rgba(255,255,255,0.97); }
-.plots-panel-body { padding: 8px 10px; }
-.plot-item { display: flex; justify-content: space-between; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-.plot-item:hover { background: #f0f0f0; }
-.plot-label { font-weight: 600; color: var(--celadon); }
-.plot-area { color: #888; font-size: 12px; }
+.info-row label { color: #888; flex-shrink: 0; width: 70px; }
+.info-row span { color: var(--ink); text-align: right; font-family: var(--mono); font-size: 12px; word-break: break-all; }
 
 /* Right chat panel (resizable) */
 .chat-panel {
@@ -1843,24 +1622,6 @@ watch(drawnRegion, (newRegion) => {
   background: var(--celadon-dark);
 }
 
-.btn-satellite {
-  padding: 8px 20px;
-  background: #3498db;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all .15s;
-}
-.btn-satellite:hover:not(:disabled) {
-  background: #2980b9;
-}
-.btn-satellite:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 /* Fullscreen modal */
 .fullscreen-modal {
   position: fixed;
@@ -2053,18 +1814,6 @@ watch(drawnRegion, (newRegion) => {
 
 .pill { font-size: 11px; color: var(--ink-muted); border: 1px solid var(--border); padding: 4px 10px; border-radius: 999px; font-family: var(--mono); }
 .pill.ok { color: var(--celadon); border-color: var(--celadon-dim); background: var(--celadon-pale); }
-
-/* Region hint */
-.region-hint {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 12px; background: var(--celadon-pale);
-  border-top: 1px solid var(--border-light);
-  font-size: 12px; color: var(--celadon);
-}
-.region-hint button {
-  background: none; border: none; color: var(--celadon); cursor: pointer;
-  font-size: 12px; text-decoration: underline;
-}
 
 /* Make the shared Composer fit the narrow panel */
 .chat-panel-inner :deep(.composer-wrap) {
