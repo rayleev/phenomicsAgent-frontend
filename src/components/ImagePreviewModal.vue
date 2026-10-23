@@ -127,10 +127,11 @@ const pngUrl = computed(() => {
 })
 
 // 整块田影像的原始 GeoTIFF（直连 droneImaging，供 field-shape-web 拉取）
+// 注意：必须带 .tif 后缀——field-shape-web 是按 URL 最后一段推断文件名的
 const mosaicOriginalUrl = computed(() => {
   if (!hasMosaic.value) return ''
   const origin = droneOrigin()
-  return `${origin}/api/mosaics/${props.mosaic!.id}/original`
+  return `${origin}/api/mosaics/${props.mosaic!.id}/original.tif`
 })
 
 // 从后端返回的绝对 URL（thumbnail_url / tile_url）推断 droneImaging 的对外 origin
