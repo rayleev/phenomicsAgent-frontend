@@ -66,11 +66,13 @@
         <div v-else-if="loadError" class="pt-tip pt-tip-error">加载失败：{{ loadError }}</div>
         <div v-else class="pt-tip pt-tip-hint">滚轮缩放 · 拖拽平移 · 双击适应窗口</div>
 
-        <TimeSeriesSlider
-          :images="series"
-          v-model="currentDate"
-          @select="onSelect"
-        />
+        <div class="pt-slider-wrap" @mousedown.stop @wheel.stop>
+          <TimeSeriesSlider
+            :images="series"
+            v-model="currentDate"
+            @select="onSelect"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -313,6 +315,8 @@ function onWheel(e: WheelEvent) {
 }
 
 function onMouseDown(e: MouseEvent) {
+  // 时间轴区域内的按下不应触发图片拖拽
+  if ((e.target as HTMLElement).closest('.pt-slider-wrap')) return
   dragging.value = true
   dragStartX = e.clientX
   dragStartY = e.clientY
