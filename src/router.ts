@@ -26,6 +26,12 @@ const routes = [
     meta: { requiresAuth: true } 
   },
   { 
+    path: '/imaging/parcel-timeline', 
+    name: 'ParcelTimeline', 
+    component: () => import('./views/ParcelTimelineView.vue'), 
+    meta: { requiresAuth: true } 
+  },
+  { 
     path: '/imaging/location', 
     redirect: '/imaging/map'
   },

@@ -46,6 +46,14 @@
             <span class="menu-text">试验田管理</span>
           </router-link>
           <router-link
+            to="/imaging/parcel-timeline"
+            class="menu-sub-item"
+            :class="{ active: route.path === '/imaging/parcel-timeline' }"
+            @click="$emit('close-mobile')"
+          >
+            <span class="menu-text">地块时空管理</span>
+          </router-link>
+          <router-link
             to="/imaging/map"
             class="menu-sub-item"
             :class="{ active: route.path === '/imaging/map' }"

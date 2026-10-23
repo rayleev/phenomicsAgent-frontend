@@ -127,6 +127,12 @@
                   <button class="btn-icon" title="查看详情" @click="openDetailDialog(item)">👁</button>
                   <button class="btn-icon" title="编辑" @click="openEditDialog(item)">✏</button>
                   <button class="btn-icon btn-danger" title="删除" @click="onDelete(item)">🗑</button>
+                  <button
+                    class="btn-icon"
+                    title="时空管理（查看该田块各时期影像）"
+                    :disabled="!item.field_name"
+                    @click="openParcelTimeline(item)"
+                  >🕑</button>
                 </td>
               </tr>
             </tbody>
@@ -420,6 +426,15 @@ async function openPreview(item: ImageItem) {
   } catch (e) {
     console.error('加载预览信息失败:', e)
   }
+}
+
+// 跳转到「地块时空管理」，带入该行的试验田（默认整块田视图）
+function openParcelTimeline(item: ImageItem) {
+  if (!item.field_name) return
+  router.push({
+    path: '/imaging/parcel-timeline',
+    query: { field: item.field_name },
+  })
 }
 
 // ── Chat helpers ──

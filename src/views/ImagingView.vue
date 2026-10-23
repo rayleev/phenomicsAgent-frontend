@@ -350,6 +350,10 @@ let fullscreenDrawInteraction: Draw | null = null
 const TIANDITU_KEY = import.meta.env.VITE_TIANDITU_KEY || '976ad152f68499029b95bfa5313ac9cc'
 const TIANDITU_MAX_NATIVE_ZOOM = 18
 const MAP_MAX_ZOOM = 22
+// 底图源原生最大级别（ESRI World Imagery / 天地图均为 18）。
+// 超过该级别瓦片服务会返回"此级别下，该区域无影像"占位图，因此底图源
+// 必须在此处封顶，超出后由 OpenLayers 拉伸 18 级瓦片（无人机影像层仍可用 22 级）。
+const BASE_MAX_ZOOM = 18
 
 // ── Drag to resize chat panel ──
 let dragging = false
@@ -451,7 +455,7 @@ async function initMap() {
   const baseUrl = useTianditu ? tiandituUrl : esriWorldImageryUrl
 
   const makeBaseSource = (url: string) =>
-    new XYZ({ url, maxZoom: MAP_MAX_ZOOM, crossOrigin: null as any })
+    new XYZ({ url, maxZoom: BASE_MAX_ZOOM, crossOrigin: null as any })
 
   // Base layer
   // crossOrigin: null —— 天地图等瓦片服务不返回 CORS 头，若用默认的
