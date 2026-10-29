@@ -21,8 +21,8 @@
           </template>
           <button
             class="ipm-btn ipm-btn-primary"
-            :disabled="!mosaicOriginalUrl"
-            :title="mosaicOriginalUrl ? '在新标签页打开小区划分应用重新划分小区' : '该小区暂无整块田影像'"
+            :disabled="!divideOriginalUrl"
+            :title="divideOriginalUrl ? '在新标签页打开小区划分应用重新划分小区' : '当前影像为单个小区影像，不支持再划分'"
             @click="openInFieldShape"
           >🧩 在小区划分应用中打开</button>
           <button
@@ -134,6 +134,18 @@ const mosaicOriginalUrl = computed(() => {
   return `${origin}/api/mosaics/${props.mosaic!.id}/original.tif`
 })
 
+// 可作为划分输入的整幅影像地址：
+// 1) 有 mission 级拼接影像 → 用拼接图
+// 2) 无拼接影像、且当前图片不属于任何小区（plot_id 为空）→ 该图本身就是整幅图，可直接划分
+// 3) 单张小区影像（plot_id 非空）→ 不允许再划分
+const divideOriginalUrl = computed(() => {
+  if (mosaicOriginalUrl.value) return mosaicOriginalUrl.value
+  const img = props.image
+  if (!img?.id) return ''
+  if (img.plot_id) return ''
+  return `${droneOrigin()}/api/images/${img.id}/original.tif`
+})
+
 // 从后端返回的绝对 URL（thumbnail_url / tile_url）推断 droneImaging 的对外 origin
 function droneOrigin(): string {
   const absolute = props.mosaic?.thumbnail_url || props.image?.thumbnail_url || props.image?.tile_url
@@ -180,8 +192,8 @@ function switchView(kind: ViewKind) {
 }
 
 function openInFieldShape() {
-  if (!mosaicOriginalUrl.value) return
-  window.open(`${FIELD_SHAPE_URL}?image_url=${encodeURIComponent(mosaicOriginalUrl.value)}`, '_blank', 'noopener')
+  if (!divideOriginalUrl.value) return
+  window.open(`${FIELD_SHAPE_URL}?image_url=${encodeURIComponent(divideOriginalUrl.value)}`, '_blank', 'noopener')
 }
 
 function openInSatelliteMap() {
