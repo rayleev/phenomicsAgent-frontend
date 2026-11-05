@@ -14,12 +14,6 @@
             @input="onSearchInput"
           />
         </div>
-        <select v-model="pageSize" @change="onPageSizeChange">
-          <option :value="20">20 条/页</option>
-          <option :value="50">50 条/页</option>
-          <option :value="80">80 条/页</option>
-        </select>
-        <button class="btn-primary" @click="openCreateDialog">+ 新增</button>
       </div>
     </div>
 
@@ -88,7 +82,7 @@
                 <th>调查时间</th>
                 <th>上传时间</th>
                 <th>状态</th>
-                <th style="width: 150px;">操作</th>
+                <th style="width: 175px;">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -124,15 +118,16 @@
                   </span>
                 </td>
                 <td class="action-cell">
-                  <button class="btn-icon" title="查看详情" @click="openDetailDialog(item)">👁</button>
-                  <button class="btn-icon" title="编辑" @click="openEditDialog(item)">✏</button>
-                  <button class="btn-icon btn-danger" title="删除" @click="onDelete(item)">🗑</button>
-                  <button
-                    class="btn-icon"
-                    title="时空管理（查看该田块各时期影像）"
-                    :disabled="!item.field_name"
-                    @click="openParcelTimeline(item)"
-                  >🕑</button>
+                  <div class="action-buttons">
+                    <button class="btn-text" title="查看详情" @click="openDetailDialog(item)">详情</button>
+                    <button class="btn-text" title="编辑" @click="openEditDialog(item)">编辑</button>
+                    <button
+                      class="btn-text"
+                      title="时空管理（查看该田块各时期影像）"
+                      :disabled="!item.field_name"
+                      @click="openParcelTimeline(item)"
+                    >时空管理</button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -150,6 +145,11 @@
             <span class="page-number">{{ page }}</span>
             <button :disabled="page >= totalPages" @click="goToPage(page + 1)">下一页</button>
             <button :disabled="page >= totalPages" @click="goToPage(totalPages)">末页</button>
+            <select v-model="pageSize" @change="onPageSizeChange">
+              <option :value="20">20 条/页</option>
+              <option :value="50">50 条/页</option>
+              <option :value="80">80 条/页</option>
+            </select>
           </div>
         </div>
       </div>
@@ -661,13 +661,6 @@ function resetForm() {
   form.extra_metadata = ''
 }
 
-function openCreateDialog() {
-  dialogMode.value = 'create'
-  currentId.value = null
-  resetForm()
-  showDialog.value = true
-}
-
 function openEditDialog(item: ImageItem) {
   dialogMode.value = 'edit'
   currentId.value = item.id
@@ -761,20 +754,6 @@ async function onSubmit() {
     alert(e.message || '保存失败')
   } finally {
     submitting.value = false
-  }
-}
-
-async function onDelete(item: ImageItem) {
-  if (!confirm(`确定删除影像「${item.original_filename}」？`)) return
-
-  try {
-    const resp = await fetch(`${API_BASE}/api/images/${item.id}`, {
-      method: 'DELETE'
-    })
-    if (!resp.ok) throw new Error('删除失败')
-    loadData()
-  } catch (e: any) {
-    alert(e.message || '删除失败')
   }
 }
 
@@ -874,11 +853,11 @@ onUnmounted(() => {
   border-color: var(--celadon);
 }
 
-.toolbar-right select {
-  padding: 8px 12px;
+.pagination-controls select {
+  padding: 6px 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 6px;
+  font-size: 13px;
   outline: none;
   background: var(--paper);
 }
@@ -1154,28 +1133,38 @@ onUnmounted(() => {
 .status-ready { background: #e8f5e9; color: #388e3c; }
 .status-error { background: #ffebee; color: #d32f2f; }
 
+/* 操作列：td 保持 table-cell 身份，flex 下沉到内层容器，
+   否则 td 脱离表格布局导致该列与表头宽度不齐、分割线错位 */
 .action-cell {
-  display: flex;
-  gap: 4px;
+  white-space: nowrap;
 }
 
-.btn-icon {
-  width: 28px;
-  height: 28px;
+.action-buttons {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.btn-text {
+  padding: 2px 6px;
   border: none;
   background: transparent;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
-  transition: background .15s;
+  font-size: 13px;
+  color: var(--ink);
+  transition: background .15s, color .15s;
+  white-space: nowrap;
 }
 
-.btn-icon:hover {
+.btn-text:hover:not(:disabled) {
   background: var(--rice-dark);
+  color: var(--celadon);
 }
 
-.btn-danger:hover {
-  background: var(--earth-pale);
+.btn-text:disabled {
+  opacity: .5;
+  cursor: not-allowed;
 }
 
 /* Pagination */
