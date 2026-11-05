@@ -21,3 +21,6 @@ yarn-debug.log*
 yarn-error.log*
 *.log
 PROJECT_MEMORY.md
+
+# WorkBuddy 工作区数据
+.workbuddy/
