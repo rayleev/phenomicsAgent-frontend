@@ -11,7 +11,7 @@
               class="ipm-btn"
               @click="switchView('mosaic')"
               title="查看该小区所属的整块田影像"
-            >🌾 查看所属整块田影像</button>
+            >🌾 地块整体影像</button>
             <button
               v-else
               class="ipm-btn"
@@ -22,15 +22,15 @@
           <button
             class="ipm-btn ipm-btn-primary"
             :disabled="!divideOriginalUrl"
-            :title="divideOriginalUrl ? '在新标签页打开小区划分应用重新划分小区' : '当前影像为单个小区影像，不支持再划分'"
+            :title="divideOriginalUrl ? '在新标签页中重新划分小区' : '单个小区影像，不支持再划分'"
             @click="openInFieldShape"
-          >🧩 在小区划分应用中打开</button>
+          >🧩 地块小区划分</button>
           <button
             class="ipm-btn"
             :disabled="!satelliteImage"
-            :title="satelliteImage ? '在卫星地图中打开该影像位置' : '该影像缺少地理坐标信息'"
+            :title="satelliteImage ? '在卫星地图中查看地块位置' : '缺少地理坐标信息，无法定位'"
             @click="openInSatelliteMap"
-          >🛰️ 在卫星地图中打开</button>
+          >🛰️ 地块位置</button>
           <button class="ipm-close" title="关闭" @click="close">×</button>
         </div>
       </div>

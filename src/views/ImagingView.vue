@@ -389,7 +389,7 @@ function openMobileSidebar() {
 
 // ── Map initialization ──
 onMounted(async () => {
-  // 从路由参数恢复影像（试验田管理「在卫星地图中打开」跳转过来）
+  // 从路由参数恢复影像（试验田管理「地块位置」跳转过来）
   const imageParam = route.query.image
   if (imageParam) {
     try {
